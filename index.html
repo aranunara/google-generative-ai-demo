@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Google Virtual Try-On Demo</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .upload-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .upload-box {
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            transition: border-color 0.3s;
+        }
+        .upload-box:hover {
+            border-color: #4285f4;
+        }
+        .upload-box.dragover {
+            border-color: #4285f4;
+            background-color: #f0f8ff;
+        }
+        input[type="file"] {
+            margin: 10px 0;
+        }
+        .preview-img {
+            max-width: 100%;
+            max-height: 200px;
+            margin-top: 10px;
+            border-radius: 5px;
+        }
+        .try-on-btn {
+            display: block;
+            width: 100%;
+            padding: 15px;
+            background-color: #4285f4;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .try-on-btn:hover:not(:disabled) {
+            background-color: #3367d6;
+        }
+        .try-on-btn:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .result-section {
+            margin-top: 30px;
+            text-align: center;
+        }
+        .result-img {
+            max-width: 100%;
+            max-height: 500px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #4285f4;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .error {
+            color: #d93025;
+            background-color: #fce8e6;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            border-left: 4px solid #d93025;
+        }
+        .info {
+            color: #1a73e8;
+            background-color: #e8f0fe;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border-left: 4px solid #1a73e8;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎽 Google Virtual Try-On Demo</h1>
+        
+        <div class="info">
+            <strong>使い方:</strong> 人物の写真と試着したい衣服の写真をアップロードして、「試着する」ボタンを押してください。
+        </div>
+        
+        <form id="tryOnForm" enctype="multipart/form-data">
+            <div class="upload-section">
+                <div class="upload-box">
+                    <h3>👤 人物画像</h3>
+                    <input type="file" id="personImage" name="person_image" accept="image/*" required>
+                    <div id="personPreview"></div>
+                </div>
+                
+                <div class="upload-box">
+                    <h3>👕 衣服画像</h3>
+                    <input type="file" id="garmentImage" name="garment_image" accept="image/*" required>
+                    <div id="garmentPreview"></div>
+                </div>
+            </div>
+            
+            <button type="submit" class="try-on-btn" id="submitBtn">🚀 試着する</button>
+        </form>
+        
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>バーチャル試着を実行中...</p>
+        </div>
+        
+        <div class="result-section" id="resultSection">
+            <div id="errorMessage"></div>
+            <div id="resultContainer"></div>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('tryOnForm');
+        const submitBtn = document.getElementById('submitBtn');
+        const loading = document.getElementById('loading');
+        const resultSection = document.getElementById('resultSection');
+        const errorMessage = document.getElementById('errorMessage');
+        const resultContainer = document.getElementById('resultContainer');
+        
+        // ファイルプレビュー機能
+        function setupFilePreview(inputId, previewId) {
+            const input = document.getElementById(inputId);
+            const preview = document.getElementById(previewId);
+            
+            input.addEventListener('change', function(e) {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        preview.innerHTML = `<img src="${e.target.result}" class="preview-img" alt="Preview">`;
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+        }
+        
+        setupFilePreview('personImage', 'personPreview');
+        setupFilePreview('garmentImage', 'garmentPreview');
+        
+        // ドラッグ&ドロップ機能
+        function setupDragDrop(boxClass, inputId) {
+            const boxes = document.querySelectorAll(`.${boxClass}`);
+            boxes.forEach(box => {
+                box.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    box.classList.add('dragover');
+                });
+                
+                box.addEventListener('dragleave', () => {
+                    box.classList.remove('dragover');
+                });
+                
+                box.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    box.classList.remove('dragover');
+                    const files = e.dataTransfer.files;
+                    if (files.length > 0) {
+                        document.getElementById(inputId).files = files;
+                        document.getElementById(inputId).dispatchEvent(new Event('change'));
+                    }
+                });
+            });
+        }
+        
+        setupDragDrop('upload-box', 'personImage');
+        setupDragDrop('upload-box', 'garmentImage');
+        
+        // フォーム送信処理
+        form.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const personFile = document.getElementById('personImage').files[0];
+            const garmentFile = document.getElementById('garmentImage').files[0];
+            
+            if (!personFile || !garmentFile) {
+                showError('人物画像と衣服画像の両方を選択してください');
+                return;
+            }
+            
+            // UI状態更新
+            submitBtn.disabled = true;
+            loading.style.display = 'block';
+            errorMessage.innerHTML = '';
+            resultContainer.innerHTML = '';
+            
+            try {
+                const formData = new FormData();
+                formData.append('person_image', personFile);
+                formData.append('garment_image', garmentFile);
+                
+                const response = await fetch('/tryon', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const imageUrl = URL.createObjectURL(blob);
+                    showResult(imageUrl);
+                } else {
+                    const errorData = await response.json();
+                    showError(errorData.error || 'エラーが発生しました');
+                }
+            } catch (error) {
+                showError('ネットワークエラーが発生しました: ' + error.message);
+            } finally {
+                submitBtn.disabled = false;
+                loading.style.display = 'none';
+            }
+        });
+        
+        function showError(message) {
+            errorMessage.innerHTML = `<div class="error">${message}</div>`;
+        }
+        
+        function showResult(imageUrl) {
+            resultContainer.innerHTML = `
+                <h3>✨ 試着結果</h3>
+                <img src="${imageUrl}" class="result-img" alt="Try-on Result">
+                <br><br>
+                <a href="${imageUrl}" download="tryon-result.jpg" class="try-on-btn" style="display: inline-block; text-decoration: none; width: auto; padding: 10px 20px;">
+                    📥 結果をダウンロード
+                </a>
+            `;
+        }
+    </script>
+</body>
+</html>
