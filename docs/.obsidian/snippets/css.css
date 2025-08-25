@@ -1,0 +1,23 @@
+/* .markdown-preview-view.is-readable-line-width .markdown-preview-sizer>div, .markdown-source-view.mod-cm6.is-readable-line-width .cm-contentContainer.cm-contentContainer>.cm-content>div, .markdown-source-view.mod-cm6.is-readable-line-width .cm-sizer>.embedded-backlinks, .markdown-source-view.mod-cm6.is-readable-line-width .cm-sizer>.inline-title, .markdown-source-view.mod-cm6.is-readable-line-width .cm-sizer>.metadata-container {
+    max-width: 1100px !important;
+} */
+
+
+body {
+    --line-width: 100vw !important;
+    --file-line-width: 96% !important;
+}
+
+.cm-contentContainer > .cm-content.cm-lineWrapping {
+    padding-left: 4rem;
+    padding-right: 4rem;
+    padding-bottom: 4rem;
+}
+
+.search-input-clear-button {
+    margin: 0 !important;
+}
+
+.input-right-decorator.clickable-icon.is-active {
+    background-color: none !important;
+}

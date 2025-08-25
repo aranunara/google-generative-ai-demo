@@ -35,3 +35,8 @@ tmp/*
 # .idea/
 # .vscode/
 compose.local.override.yml
+docs/.obsidian/app.json
+docs/.obsidian/appearance.json
+docs/.obsidian/core-plugins.json
+docs/.obsidian/graph.json
+docs/.obsidian/workspace.json

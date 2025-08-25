@@ -1,0 +1,252 @@
+/* macOS-inspired Obsidian UI */
+
+:root {
+  --accent: #007AFF;
+  --accent-hover: #0051D8;
+  --bg: #FFFFFF;
+  --bg-secondary: #F7F7F7;
+  --text: #1D1D1F;
+  --text-secondary: #86868B;
+  --divider: #D2D2D7;
+  --shadow: rgba(0, 0, 0, 0.04);
+}
+
+.theme-dark {
+  --accent: #0A84FF;
+  --accent-hover: #409CFF;
+  --bg: #000000;
+  --bg-secondary: #1C1C1E;
+  --text: #FFFFFF;
+  --text-secondary: #98989D;
+  --divider: #38383A;
+  --shadow: rgba(0, 0, 0, 0.3);
+}
+
+/* Typography */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+  font-feature-settings: "kern" 1;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.markdown-preview-view,
+.cm-editor {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  line-height: 1.6;
+  color: var(--text);
+}
+
+/* Headers */
+.markdown-preview-view h1 { 
+  font-size: 28px; 
+  font-weight: 700; 
+  color: var(--text);
+  margin: 32px 0 16px 0;
+  letter-spacing: -0.003em;
+}
+
+.markdown-preview-view h2 { 
+  font-size: 22px; 
+  font-weight: 600; 
+  color: var(--text);
+  margin: 24px 0 12px 0;
+  letter-spacing: -0.002em;
+}
+
+.markdown-preview-view h3 { 
+  font-size: 17px; 
+  font-weight: 600; 
+  color: var(--text);
+  margin: 20px 0 8px 0;
+}
+
+/* Sidebar */
+/* Avoid interfering with Obsidian's computed indent; do not set padding here */
+.nav-file-title,
+.nav-folder-title {
+  font-size: 13px;
+  font-weight: 400;
+  border-radius: 6px;
+  transition: background-color 0.15s ease;
+}
+
+.nav-file-title:hover,
+.nav-folder-title:hover {
+  background: var(--bg-secondary);
+}
+
+.nav-file-title.is-active {
+  background: var(--accent);
+  color: white;
+  font-weight: 500;
+}
+
+/* Code */
+.markdown-preview-view code {
+  font-family: "SF Mono", Monaco, Consolas, monospace;
+  background: var(--bg-secondary);
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.markdown-preview-view pre {
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  padding: 16px;
+  font-family: "SF Mono", Monaco, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* Links */
+.markdown-preview-view a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.markdown-preview-view a:hover {
+  text-decoration: underline;
+}
+
+/* Tables */
+.markdown-preview-view table {
+  border-collapse: collapse;
+  margin: 16px 0;
+  font-size: 14px;
+}
+
+.markdown-preview-view th {
+  background: var(--bg-secondary);
+  padding: 8px 12px;
+  font-weight: 600;
+  text-align: left;
+  border-bottom: 1px solid var(--divider);
+}
+
+.markdown-preview-view td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--divider);
+}
+
+/* Lists - Disabled to prevent conflicts with rich.css */
+/* The rich.css handles all list styling */
+/*
+.markdown-preview-view ul,
+.markdown-preview-view ol {
+  padding-left: 20px;
+}
+
+.markdown-preview-view li {
+  margin: 2px 0;
+}
+*/
+
+/* Note: All list styling is now handled by rich.css to prevent double bullet points */
+
+/* Blockquotes */
+.markdown-preview-view blockquote {
+  margin: 16px 0;
+  padding-left: 16px;
+  border-left: 3px solid var(--divider);
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+/* Reading view width fix */
+.markdown-reading-view {
+  max-width: none !important;
+  width: 100% !important;
+}
+
+.markdown-preview-view {
+  max-width: none !important;
+  width: 100% !important;
+  padding: 20px 40px !important;
+}
+
+.view-content {
+  padding: 0 !important;
+}
+
+/* Workspace */
+.workspace-leaf {
+  border-radius: 0;
+  box-shadow: none;
+  border: none;
+}
+
+.workspace-tab-header {
+  font-size: 13px;
+  font-weight: 400;
+  border-radius: 0;
+  border-bottom: 1px solid var(--divider);
+}
+
+.workspace-tab-header.is-active {
+  background: var(--bg);
+  color: var(--text);
+  border-bottom: 2px solid var(--accent);
+}
+
+/* Status bar */
+.status-bar {
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--divider);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--text-secondary);
+  border-radius: 6px;
+  border: 3px solid var(--bg);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text);
+}
+
+/* Search */
+.search-input {
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 14px;
+  background: var(--bg);
+}
+
+.search-input:focus {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
+}
+
+/* Tags */
+.tag {
+  background: var(--bg-secondary);
+  color: var(--text);
+  border-radius: 12px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* Clean focus states */
+button:focus,
+.clickable-icon:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.2);
+  border-radius: 4px;
+}

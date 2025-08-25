@@ -1,0 +1,23 @@
+FROM golang:1.24-alpine
+
+# 開発に必要なツールをインストール
+RUN apk add --no-cache git wget
+
+WORKDIR /app
+
+# Go modulesを先にコピーして依存関係をキャッシュ
+COPY go.mod go.sum ./
+RUN go mod download
+
+# airをインストール
+RUN go install github.com/air-verse/air@latest
+
+# 必要なディレクトリを作成
+RUN mkdir -p /root/.config/gcloud
+RUN mkdir -p /app/tmp
+
+# ホットリロード用にソースコードはボリュームマウントされるので
+# ここではコピーしない（compose.local.ymlでマウント）
+
+# airでホットリロード開始
+CMD ["air", "-c", ".air.toml"]

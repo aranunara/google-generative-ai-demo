@@ -6,26 +6,27 @@
 README.md
 *.md
 
-# Environment files
-.env
+# Local development
 .env.local
-.env.example
-
-# Test files
-test/
-*_test.go
-
-# Development files
-.vscode/
-.idea/
+.env.dev
+.air.toml
 
 # Temporary files
+tmp/
 *.tmp
 *.log
 
-# OS files
+# IDE
+.vscode/
+.idea/
+
+# Dependencies
+node_modules/
+
+# OS
 .DS_Store
 Thumbs.db
 
-# Build artifacts
-main_old.go
+# Build artifacts for host OS (we build in container)
+main
+*.exe

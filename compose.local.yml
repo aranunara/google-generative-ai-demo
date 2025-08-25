@@ -4,21 +4,32 @@ services:
   tryon-app:
     build:
       context: .
-      dockerfile: dockerfile.dev
+      dockerfile: dockerfile.local
     ports:
       - "8082:8080"
     volumes:
       - .:/app  # ホットリロード用
       - ~/.config/gcloud:/root/.config/gcloud:ro
+      # Go module cacheを除外してパフォーマンスを向上
+      - /app/tmp
+      - /go/pkg/mod
     working_dir: /app
     environment:      
       - VTO_MODEL=${VTO_MODEL:-virtual-try-on-preview-08-04}
       - PORT=8080
       - PROJECT_ID=${PROJECT_ID}
       - LOCATION=${LOCATION}
+      # Docker環境でのホットリロード最適化
+      - CGO_ENABLED=0
+      - GOOS=linux
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/healthz"]
       timeout: 5s
       retries: 5
       start_period: 30s
     restart: unless-stopped
+    # コンテナの権限とセキュリティ設定
+    cap_add:
+      - SYS_PTRACE  # airのプロセス監視に必要
+    security_opt:
+      - seccomp:unconfined  # デバッグ用
