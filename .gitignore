@@ -24,14 +24,9 @@ profile.cov
 go.work
 go.work.sum
 
-# env files
+# env file
 .env
-.env.*
-
-# tmp files
-tmp/*
 
 # Editor/IDE
 # .idea/
 # .vscode/
-compose.local.override.yml
