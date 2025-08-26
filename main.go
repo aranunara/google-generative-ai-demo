@@ -4,7 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/json"
+	"tryon-demo/model"
+
 	"fmt"
 	"image"
 	_ "image/gif"
@@ -15,7 +16,10 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
+
+	"encoding/json"
 
 	"cloud.google.com/go/vertexai/genai"
 	"github.com/gorilla/mux"
@@ -35,7 +39,7 @@ type Server struct {
 	location  string
 	vtoModel  string
 	client    *genai.Client
-	useREST   bool // REST API使用フラグ
+	useSDK    bool // SDK使用フラグ（false=REST API、true=genai.Client）
 }
 
 // REST API用の構造体定義
@@ -73,14 +77,23 @@ type Parameters struct {
 	OutputOptions    OutputOptions `json:"outputOptions,omitempty"`
 }
 
+// VTOParameters はVirtual Try-On APIのパラメータ設定を管理する
+type VTOParameters struct {
+	AddWatermark     bool   `form:"add_watermark"`
+	BaseSteps        int    `form:"base_steps"`
+	PersonGeneration string `form:"person_generation"`
+	SafetySetting    string `form:"safety_setting"`
+	SampleCount      int    `form:"sample_count"`
+	Seed             int    `form:"seed"`
+	StorageUri       string `form:"storage_uri"`
+	OutputMimeType   string `form:"output_mime_type"`
+	// 両方ともJPEGのみをサポートしている
+	CompressionQuality int `form:"compression_quality"`
+}
+
 type PredictRequest struct {
 	Instances  []Instance `json:"instances"`
 	Parameters Parameters `json:"parameters,omitempty"`
-}
-
-type PredictResponse struct {
-	Predictions []interface{} `json:"predictions"`
-	Metadata    interface{}   `json:"metadata,omitempty"`
 }
 
 // NewServer はServerを初期化する
@@ -103,12 +116,12 @@ func NewServer() (*Server, error) {
 
 	log.Printf("[boot] Using VTO_MODEL=%s", vtoModel)
 
-	// REST API使用フラグを確認
-	useREST := os.Getenv("USE_REST_API") == "true"
-	log.Printf("[boot] USE_REST_API=%v", useREST)
+	// SDK使用フラグを確認（デフォルトはREST API）
+	useSDK := os.Getenv("USE_SDK") == "true"
+	log.Printf("[boot] USE_SDK=%v (false=REST API, true=genai.Client)", useSDK)
 
 	var client *genai.Client
-	if !useREST {
+	if useSDK {
 		// 従来のgenai.Clientを使用する場合
 		ctx := context.Background()
 		// エンドポイント
@@ -126,7 +139,7 @@ func NewServer() (*Server, error) {
 		location:  location,
 		vtoModel:  vtoModel,
 		client:    client,
-		useREST:   useREST,
+		useSDK:    useSDK,
 	}, nil
 }
 
@@ -182,6 +195,99 @@ func getAccessToken(ctx context.Context) (string, error) {
 	return token.AccessToken, nil
 }
 
+// getDefaultVTOParameters は環境変数からデフォルト値を取得する
+func getDefaultVTOParameters() VTOParameters {
+	params := VTOParameters{
+		// APIドキュメントに基づくデフォルト値
+		AddWatermark:     getEnvBool("VTO_ADD_WATERMARK", true),
+		BaseSteps:        getEnvInt("VTO_BASE_STEPS", 32),
+		PersonGeneration: getEnvString("VTO_PERSON_GENERATION", "allow_adult"),
+		SafetySetting:    getEnvString("VTO_SAFETY_SETTING", "block_medium_and_above"),
+		SampleCount:      getEnvInt("VTO_SAMPLE_COUNT", 1),
+		Seed:             getEnvInt("VTO_SEED", 0),
+		StorageUri:       getEnvString("VTO_STORAGE_URI", ""),
+		OutputMimeType:   getEnvString("VTO_OUTPUT_MIME_TYPE", "image/png"),
+	}
+
+	// OutputMimeTypeが「image/jpg」の場合のみ、CompressionQualityを設定
+	if params.OutputMimeType == "image/jpg" {
+		params.CompressionQuality = getEnvInt("VTO_COMPRESSION_QUALITY", 75)
+	}
+
+	return params
+}
+
+// 環境変数ヘルパー関数
+func getEnvString(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
+func getEnvInt(key string, defaultValue int) int {
+	if value := os.Getenv(key); value != "" {
+		if intVal, err := strconv.Atoi(value); err == nil {
+			return intVal
+		}
+	}
+	return defaultValue
+}
+
+func getEnvBool(key string, defaultValue bool) bool {
+	if value := os.Getenv(key); value != "" {
+		if boolVal, err := strconv.ParseBool(value); err == nil {
+			return boolVal
+		}
+	}
+	return defaultValue
+}
+
+// parseVTOParametersFromForm はフォームデータからパラメータを解析する
+func parseVTOParametersFromForm(r *http.Request) VTOParameters {
+	// デフォルト値で初期化
+	params := getDefaultVTOParameters()
+
+	// フォームデータが存在する場合のみ値を上書き
+	if r.FormValue("add_watermark") != "" {
+		params.AddWatermark = r.FormValue("add_watermark") == "true"
+	}
+	if r.FormValue("base_steps") != "" {
+		if val, err := strconv.Atoi(r.FormValue("base_steps")); err == nil && val > 0 {
+			params.BaseSteps = val
+		}
+	}
+	if r.FormValue("person_generation") != "" {
+		params.PersonGeneration = r.FormValue("person_generation")
+	}
+	if r.FormValue("safety_setting") != "" {
+		params.SafetySetting = r.FormValue("safety_setting")
+	}
+	if r.FormValue("sample_count") != "" {
+		if val, err := strconv.Atoi(r.FormValue("sample_count")); err == nil && val >= 1 && val <= 4 {
+			params.SampleCount = val
+		}
+	}
+	if r.FormValue("seed") != "" {
+		if val, err := strconv.Atoi(r.FormValue("seed")); err == nil {
+			params.Seed = val
+		}
+	}
+	if r.FormValue("storage_uri") != "" {
+		params.StorageUri = r.FormValue("storage_uri")
+	}
+	if r.FormValue("output_mime_type") != "" {
+		params.OutputMimeType = r.FormValue("output_mime_type")
+	}
+	if r.FormValue("compression_quality") != "" && params.OutputMimeType == "image/jpg" {
+		if val, err := strconv.Atoi(r.FormValue("compression_quality")); err == nil && val >= 0 && val <= 100 {
+			params.CompressionQuality = val
+		}
+	}
+
+	return params
+}
+
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	// Python版のindex.htmlと同じHTMLを返す
 	html := `<!DOCTYPE html>
@@ -229,11 +335,73 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-seri
 <span id="garment-name" class="ml-2 text-sm text-gray-500"></span>
 </div>
 </div>
+<!-- 詳細設定セクション -->
+<div id="advanced-settings" class="mb-6 p-4 bg-gray-50 rounded-lg" style="display: none;">
+<h3 class="text-lg font-semibold mb-4 text-gray-700">詳細設定</h3>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+<div>
+<label class="block text-sm font-medium mb-1 text-gray-600">Watermark追加</label>
+<select name="add_watermark" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+<option value="true">有効</option>
+<option value="false">無効</option>
+</select>
+</div>
+<div>
+<label class="block text-sm font-medium mb-1 text-gray-600">Base Steps</label>
+<input type="number" name="base_steps" min="1" max="100" value="32" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+</div>
+<div>
+<label class="block text-sm font-medium mb-1 text-gray-600">Person Generation</label>
+<select name="person_generation" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+<option value="allow_adult">成人のみ許可</option>
+<option value="allow_all">全年齢許可</option>
+<option value="dont_allow">人物生成禁止</option>
+</select>
+</div>
+<div>
+<label class="block text-sm font-medium mb-1 text-gray-600">Safety Setting</label>
+<select name="safety_setting" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+<option value="block_medium_and_above">中程度以上をブロック</option>
+<option value="block_low_and_above">低レベル以上をブロック</option>
+<option value="block_only_high">高レベルのみブロック</option>
+<option value="block_none">ブロックなし</option>
+</select>
+</div>
+<div>
+<label class="block text-sm font-medium mb-1 text-gray-600">Sample Count</label>
+<input type="number" name="sample_count" min="1" max="4" value="1" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+</div>
+<div>
+<label class="block text-sm font-medium mb-1 text-gray-600">Seed (オプション)</label>
+<input type="number" name="seed" value="0" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+</div>
+<div>
+<label class="block text-sm font-medium mb-1 text-gray-600">Output MIME Type</label>
+<select name="output_mime_type" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+<option value="image/png">PNG</option>
+<option value="image/jpeg">JPEG</option>
+</select>
+</div>
+<div>
+<label class="block text-sm font-medium mb-1 text-gray-600">Compression Quality (JPEG用)</label>
+<input type="number" name="compression_quality" min="0" max="100" value="75" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+</div>
+<div class="md:col-span-2">
+<label class="block text-sm font-medium mb-1 text-gray-600">Storage URI (オプション)</label>
+<input type="text" name="storage_uri" placeholder="gs://your-bucket/path/" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+</div>
+</div>
+</div>
 <div class="text-center space-y-3">
+<button type="button" id="toggle-advanced" class="text-sm text-indigo-600 hover:text-indigo-800 mb-2">
+詳細設定を表示
+</button>
+<div>
 <button type="submit" id="submit-btn"
 class="bg-gradient-to-r from-indigo-500 to-blue-600 text-white font-bold py-3 px-8 rounded-full hover:shadow-xl transform hover:-translate-y-0.5 transition-all">
 着せ替えを実行
 </button>
+</div>
 <div>
 <button type="button" id="clear-btn"
 class="px-4 py-2 text-sm rounded-full border border-gray-300 text-gray-700 hover:bg-gray-50">
@@ -245,6 +413,7 @@ class="px-4 py-2 text-sm rounded-full border border-gray-300 text-gray-700 hover
 <div id="result-section" class="mt-10 hidden">
 <h2 class="text-2xl font-bold text-center mb-4 text-gray-800">生成結果</h2>
 <div id="result-display" class="preview-box rounded-lg bg-green-50"></div>
+<div id="multiple-results" class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4" style="display: none;"></div>
 </div>
 <div id="error-message" class="mt-6 hidden bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg"></div>
 </main>
@@ -262,9 +431,23 @@ const personName = document.getElementById('person-name');
 const garmentName = document.getElementById('garment-name');
 const resultSection = document.getElementById('result-section');
 const resultDisplay = document.getElementById('result-display');
+const multipleResults = document.getElementById('multiple-results');
 const errorMessage = document.getElementById('error-message');
 const submitBtn = document.getElementById('submit-btn');
 const clearBtn = document.getElementById('clear-btn');
+const toggleAdvancedBtn = document.getElementById('toggle-advanced');
+const advancedSettings = document.getElementById('advanced-settings');
+
+// 詳細設定の表示/非表示切り替え
+toggleAdvancedBtn.addEventListener('click', () => {
+    if (advancedSettings.style.display === 'none') {
+        advancedSettings.style.display = 'block';
+        toggleAdvancedBtn.textContent = '詳細設定を非表示';
+    } else {
+        advancedSettings.style.display = 'none';
+        toggleAdvancedBtn.textContent = '詳細設定を表示';
+    }
+});
 
 function setupPreview(input, previewElement, nameLabel) {
     input.addEventListener('change', (event) => {
@@ -293,8 +476,22 @@ clearBtn.addEventListener('click', () => {
     personPreview.innerHTML = '<span class="text-gray-500">プレビュー</span>';
     garmentPreview.innerHTML = '<span class="text-gray-500">プレビュー</span>';
     resultDisplay.innerHTML = '';
+    multipleResults.innerHTML = '';
+    multipleResults.style.display = 'none';
+    resultDisplay.style.display = 'flex';
     resultSection.classList.add('hidden');
     errorMessage.classList.add('hidden');
+    
+    // 詳細設定もリセット
+    document.querySelector('select[name="add_watermark"]').value = 'true';
+    document.querySelector('input[name="base_steps"]').value = '32';
+    document.querySelector('select[name="person_generation"]').value = 'allow_adult';
+    document.querySelector('select[name="safety_setting"]').value = 'block_medium_and_above';
+    document.querySelector('input[name="sample_count"]').value = '1';
+    document.querySelector('input[name="seed"]').value = '0';
+    document.querySelector('select[name="output_mime_type"]').value = 'image/png';
+    document.querySelector('input[name="compression_quality"]').value = '75';
+    document.querySelector('input[name="storage_uri"]').value = '';
 });
 
 form.addEventListener('submit', async (event) => {
@@ -319,6 +516,14 @@ form.addEventListener('submit', async (event) => {
     const formData = new FormData();
     formData.append('person_image', p);
     formData.append('garment_image', g);
+    
+    // フォームの全てのパラメータを追加
+    const formElements = document.querySelectorAll('#advanced-settings input, #advanced-settings select');
+    formElements.forEach(element => {
+        if (element.name && element.value) {
+            formData.append(element.name, element.value);
+        }
+    });
 
     try {
         const resp = await fetch('/tryon', { method: 'POST', body: formData });
@@ -330,10 +535,48 @@ form.addEventListener('submit', async (event) => {
             } catch {}
             throw new Error(msg);
         }
-        const blob = await resp.blob();
-        resultDisplay.innerHTML = '<img src="' + URL.createObjectURL(blob) + '" alt="Result">';
+        
+        const contentType = resp.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+            // 複数画像レスポンス（REST API）
+            const data = await resp.json();
+            if (data.success && data.images && data.images.length > 0) {
+                // 単一画像表示を隠す
+                resultDisplay.style.display = 'none';
+                multipleResults.style.display = 'grid';
+                multipleResults.innerHTML = '';
+                
+                data.images.forEach((img, index) => {
+                    const imgContainer = document.createElement('div');
+                    imgContainer.className = 'relative';
+                    
+                    const imgElement = document.createElement('img');
+                    imgElement.src = 'data:' + img.type + ';base64,' + img.data;
+                    imgElement.alt = 'Result ' + (index + 1);
+                    imgElement.className = 'w-full h-auto rounded-lg shadow-md';
+                    
+                    const label = document.createElement('div');
+                    label.textContent = '画像 ' + (index + 1);
+                    label.className = 'absolute top-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-sm';
+                    
+                    imgContainer.appendChild(imgElement);
+                    imgContainer.appendChild(label);
+                    multipleResults.appendChild(imgContainer);
+                });
+            } else {
+                throw new Error('Invalid response format');
+            }
+        } else {
+            // 単一画像レスポンス（SDK）
+            const blob = await resp.blob();
+            resultDisplay.style.display = 'flex';
+            multipleResults.style.display = 'none';
+            resultDisplay.innerHTML = '<img src="' + URL.createObjectURL(blob) + '" alt="Result">';
+        }
     } catch (err) {
         console.error(err);
+        resultDisplay.style.display = 'flex';
+        multipleResults.style.display = 'none';
         resultDisplay.innerHTML = '<span class="text-red-500">生成に失敗しました</span>';
         errorMessage.textContent = 'エラー: ' + err.message;
         errorMessage.classList.remove('hidden');
@@ -387,7 +630,7 @@ func (s *Server) handleTryOn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// JPEG形式に変換（Python版と同じ処理）
+	// JPEG形式に変換
 	personJPEG, errConvertToJPEGPerson := convertToJPEG(personData)
 	if errConvertToJPEGPerson != nil {
 		log.Printf("Failed to convert person image: %v", errConvertToJPEGPerson)
@@ -404,35 +647,75 @@ func (s *Server) handleTryOn(w http.ResponseWriter, r *http.Request) {
 
 	// Virtual Try-On API を呼び出し
 	ctx := context.Background()
-	var result []byte
-	var errCallVirtualTryOn error
 
-	if s.useREST {
+	if !s.useSDK {
 		log.Printf("Using REST API for Virtual Try-On")
-		result, errCallVirtualTryOn = s.callVirtualTryOnREST(ctx, personJPEG, garmentJPEG)
-	} else {
-		log.Printf("Using genai.Client for Virtual Try-On")
-		result, errCallVirtualTryOn = s.callVirtualTryOn(ctx, personJPEG, garmentJPEG)
-	}
+		// フォームからパラメータを解析
+		vtoParams := parseVTOParametersFromForm(r)
+		log.Printf("VTO Parameters: %+v", vtoParams)
 
-	if errCallVirtualTryOn != nil {
-		log.Printf("Virtual Try-On failed: %v", errCallVirtualTryOn)
+		resultImages, errCallVirtualTryOn := s.callVirtualTryOnREST(ctx, personJPEG, garmentJPEG, vtoParams)
+		if errCallVirtualTryOn != nil {
+			log.Printf("Virtual Try-On failed: %v", errCallVirtualTryOn)
 
-		// クォータエラーの場合は特別なメッセージ
-		if isQuotaError(errCallVirtualTryOn) {
-			sendError(w, "現在サーバーが混雑しています。しばらく待ってから再試行してください。", http.StatusTooManyRequests)
+			// クォータエラーの場合は特別なメッセージ
+			if isQuotaError(errCallVirtualTryOn) {
+				sendError(w, "現在サーバーが混雑しています。しばらく待ってから再試行してください。", http.StatusTooManyRequests)
+				return
+			}
+
+			hint := "ヒント: 露出や著名人・ロゴ類・過度な加工を避け、人物と衣服がはっきり写る画像で再試行してください。"
+			sendError(w, fmt.Sprintf("生成に失敗しました: %v %s", errCallVirtualTryOn, hint), http.StatusInternalServerError)
 			return
 		}
 
-		hint := "ヒント: 露出や著名人・ロゴ類・過度な加工を避け、人物と衣服がはっきり写る画像で再試行してください。"
-		sendError(w, fmt.Sprintf("生成に失敗しました: %v %s", errCallVirtualTryOn, hint), http.StatusInternalServerError)
-		return
-	}
+		// 複数画像をJSONで返す
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store, max-age=0")
 
-	// 結果を返す
-	w.Header().Set("Content-Type", "image/jpeg")
-	w.Header().Set("Cache-Control", "no-store, max-age=0")
-	w.Write(result)
+		// Base64エンコードして返す
+		var images []map[string]string
+		for i, imageData := range resultImages {
+			images = append(images, map[string]string{
+				"id":   fmt.Sprintf("image_%d", i),
+				"data": base64.StdEncoding.EncodeToString(imageData),
+				"type": vtoParams.OutputMimeType,
+			})
+		}
+
+		// JSONレスポンスを送信
+		response := map[string]any{
+			"success": true,
+			"images":  images,
+		}
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			log.Printf("Failed to encode JSON response: %v", err)
+			sendError(w, "レスポンスの生成に失敗しました", http.StatusInternalServerError)
+			return
+		}
+
+	} else {
+		log.Printf("Using genai.Client for Virtual Try-On")
+		result, errCallVirtualTryOn := s.callVirtualTryOn(ctx, personJPEG, garmentJPEG)
+		if errCallVirtualTryOn != nil {
+			log.Printf("Virtual Try-On failed: %v", errCallVirtualTryOn)
+
+			// クォータエラーの場合は特別なメッセージ
+			if isQuotaError(errCallVirtualTryOn) {
+				sendError(w, "現在サーバーが混雑しています。しばらく待ってから再試行してください。", http.StatusTooManyRequests)
+				return
+			}
+
+			hint := "ヒント: 露出や著名人・ロゴ類・過度な加工を避け、人物と衣服がはっきり写る画像で再試行してください。"
+			sendError(w, fmt.Sprintf("生成に失敗しました: %v %s", errCallVirtualTryOn, hint), http.StatusInternalServerError)
+			return
+		}
+
+		// 単一画像を返す（従来通り）
+		w.Header().Set("Content-Type", "image/jpeg")
+		w.Header().Set("Cache-Control", "no-store, max-age=0")
+		w.Write(result)
+	}
 }
 
 func (s *Server) callVirtualTryOn(ctx context.Context, personImage, garmentImage []byte) ([]byte, error) {
@@ -487,8 +770,8 @@ func (s *Server) callVirtualTryOn(ctx context.Context, personImage, garmentImage
 }
 
 // callVirtualTryOnREST はREST APIを直接呼び出してVirtual Try-Onを実行する
-// curlコマンドの模倣実装
-func (s *Server) callVirtualTryOnREST(ctx context.Context, personImage, garmentImage []byte) ([]byte, error) {
+// curlコマンドの模倣実装（複数画像対応）
+func (s *Server) callVirtualTryOnREST(ctx context.Context, personImage, garmentImage []byte, vtoParams VTOParameters) ([][]byte, error) {
 	// アクセストークンを取得
 	accessToken, err := getAccessToken(ctx)
 	if err != nil {
@@ -499,7 +782,7 @@ func (s *Server) callVirtualTryOnREST(ctx context.Context, personImage, garmentI
 	personB64 := base64.StdEncoding.EncodeToString(personImage)
 	garmentB64 := base64.StdEncoding.EncodeToString(garmentImage)
 
-	// リクエストペイロードを構築
+	// リクエストペイロードを構築（注入されたパラメータを使用）
 	request := PredictRequest{
 		Instances: []Instance{
 			{
@@ -518,15 +801,16 @@ func (s *Server) callVirtualTryOnREST(ctx context.Context, personImage, garmentI
 			},
 		},
 		Parameters: Parameters{
-			AddWatermark:     false,
-			BaseSteps:        4,
-			PersonGeneration: "base-person-from-provided-image",
-			SafetySetting:    "block_some",
-			SampleCount:      1,
-			Seed:             0,
+			AddWatermark:     vtoParams.AddWatermark,
+			BaseSteps:        vtoParams.BaseSteps,
+			PersonGeneration: vtoParams.PersonGeneration,
+			SafetySetting:    vtoParams.SafetySetting,
+			SampleCount:      vtoParams.SampleCount,
+			Seed:             vtoParams.Seed,
+			StorageUri:       vtoParams.StorageUri,
 			OutputOptions: OutputOptions{
-				MimeType:           "image/jpeg",
-				CompressionQuality: 90,
+				MimeType:           vtoParams.OutputMimeType,
+				CompressionQuality: vtoParams.CompressionQuality,
 			},
 		},
 	}
@@ -570,53 +854,51 @@ func (s *Server) callVirtualTryOnREST(ctx context.Context, personImage, garmentI
 	}
 
 	// レスポンスをパース
-	var predResp PredictResponse
-	if err := json.Unmarshal(respBody, &predResp); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	predResp, errParse := parse(respBody)
+	if errParse != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", errParse)
 	}
 
-	// 画像データを抽出
+	// 画像データを抽出（複数画像対応）
 	if len(predResp.Predictions) == 0 {
 		return nil, fmt.Errorf("no predictions in response")
 	}
 
-	// 予測結果から画像データを取得
-	// レスポンス構造は実際のAPIレスポンスに依存するため、適切に調整が必要
-	prediction, ok := predResp.Predictions[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid prediction format")
-	}
+	var imageDataList [][]byte
 
-	// 画像データが格納されているフィールドを探す
-	// 実際のAPIレスポンス構造に合わせて調整が必要
-	var imageB64 string
-	if bytesB64, exists := prediction["bytesBase64Encoded"]; exists {
-		if s, ok := bytesB64.(string); ok {
-			imageB64 = s
+	// 全ての予測結果から画像データを取得
+	for i, prediction := range predResp.Predictions {
+		imageB64 := prediction.BytesBase64Encoded
+
+		if imageB64 == "" {
+			log.Printf("Warning: no image data found in prediction %d", i)
+			continue
 		}
-	} else if images, exists := prediction["images"]; exists {
-		if imageArray, ok := images.([]interface{}); ok && len(imageArray) > 0 {
-			if imageObj, ok := imageArray[0].(map[string]interface{}); ok {
-				if bytesB64, exists := imageObj["bytesBase64Encoded"]; exists {
-					if s, ok := bytesB64.(string); ok {
-						imageB64 = s
-					}
-				}
-			}
+
+		// Base64デコード
+		imageData, err := base64.StdEncoding.DecodeString(imageB64)
+		if err != nil {
+			log.Printf("Warning: failed to decode base64 image at index %d: %v", i, err)
+			continue
 		}
+
+		imageDataList = append(imageDataList, imageData)
 	}
 
-	if imageB64 == "" {
-		return nil, fmt.Errorf("no image data found in response")
+	if len(imageDataList) == 0 {
+		return nil, fmt.Errorf("no valid image data found in response")
 	}
 
-	// Base64デコード
-	imageData, err := base64.StdEncoding.DecodeString(imageB64)
+	return imageDataList, nil
+}
+
+func parse(data []byte) (response *model.VirtualTryOnResponse, err error) {
+	err = json.Unmarshal([]byte(data), &response)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode base64 image: %w", err)
+		return nil, err
 	}
 
-	return imageData, nil
+	return response, nil
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -665,7 +947,7 @@ func main() {
 	log.Printf("Starting server on port %s", port)
 	log.Printf("Project: %s, Location: %s, Model: %s", server.projectID, server.location, server.vtoModel)
 	log.Printf("API Mode: %s", func() string {
-		if server.useREST {
+		if !server.useSDK {
 			return "REST API"
 		}
 		return "genai.Client"

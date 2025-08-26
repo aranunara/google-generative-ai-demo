@@ -22,10 +22,10 @@ This page covers the following topics:
 
 When you provide an image of a person or a clothing product, you can specify it as either a Base64-encoded byte string or a Cloud Storage URI. The following table provides a comparison of these two options to help you decide which one to use.
 
-| Option | Description | Pros | Cons | Use Case |
-| --- | --- | --- | --- | --- |
-| `bytesBase64Encoded` | The image data is sent directly within the JSON request body. | Simple for smaller images; no need for a separate storage step. | Increases request size; not suitable for very large images due to JSON payload limits. | Quick tests or applications where images are generated or processed on the fly and not stored long-term. |
-| `gcsUri` | A URI pointing to an image file stored in a Cloud Storage bucket. | Efficient for large images; keeps the request payload small. | Requires uploading the image to Cloud Storage first, which adds an extra step. | Batch processing, workflows where images are already stored in Cloud Storage, or when dealing with large image files. |
+| Option               | Description                                                       | Pros                                                            | Cons                                                                                   | Use Case                                                                                                              |
+| -------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `bytesBase64Encoded` | The image data is sent directly within the JSON request body.     | Simple for smaller images; no need for a separate storage step. | Increases request size; not suitable for very large images due to JSON payload limits. | Quick tests or applications where images are generated or processed on the fly and not stored long-term.              |
+| `gcsUri`             | A URI pointing to an image file stored in a Cloud Storage bucket. | Efficient for large images; keeps the request payload small.    | Requires uploading the image to Cloud Storage first, which adds an extra step.         | Batch processing, workflows where images are already stored in Cloud Storage, or when dealing with large image files. |
 
 ## Supported model versions
 

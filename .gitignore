@@ -40,3 +40,11 @@ docs/.obsidian/appearance.json
 docs/.obsidian/core-plugins.json
 docs/.obsidian/graph.json
 docs/.obsidian/workspace.json
+tryon-server
+.mcp.json
+curl.txt
+.serena/cache/go/document_symbols_cache_v23-06-25.pkl
+tryon-demo
+
+.serena/*
+.cursorrules

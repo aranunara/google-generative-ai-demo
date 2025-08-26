@@ -1,9 +1,12 @@
-FROM golang:1.24-alpine
+FROM golang:1.25-alpine
 
 # 開発に必要なツールをインストール
 RUN apk add --no-cache git wget
 
 WORKDIR /app
+
+# jsonv2 を有効化する環境変数をセット
+ENV GOEXPERIMENT=jsonv2
 
 # Go modulesを先にコピーして依存関係をキャッシュ
 COPY go.mod go.sum ./
