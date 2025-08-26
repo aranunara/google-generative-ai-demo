@@ -7,7 +7,7 @@ import (
 
 	"github.com/gorilla/mux"
 
-	appservices "tryon-demo/internal/application/services"
+	"tryon-demo/internal/application/services"
 	"tryon-demo/internal/application/usecases"
 	domainservices "tryon-demo/internal/domain/services"
 	"tryon-demo/internal/infrastructure/api"
@@ -51,7 +51,7 @@ func main() {
 
 	// Initialize application layer
 	tryOnUseCase := usecases.NewTryOnUseCase(tryOnRepository, tryOnDomainService)
-	parameterService := appservices.NewParameterService()
+	parameterService := services.NewParameterService()
 
 	// Initialize API layer
 	handler := api.NewTryOnHandler(tryOnUseCase, parameterService)
