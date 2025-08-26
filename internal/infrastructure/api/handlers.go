@@ -7,6 +7,9 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"tryon-demo/internal/application/services"
 	"tryon-demo/internal/application/usecases"
@@ -17,19 +20,394 @@ const maxFileSize = 25 * 1024 * 1024 // 25MB
 type TryOnHandler struct {
 	tryOnUseCase     *usecases.TryOnUseCase
 	parameterService *services.ParameterService
+	isSkipGenerate   bool
+	location         string // Vertex AIのリージョン情報
 }
 
 func NewTryOnHandler(
 	tryOnUseCase *usecases.TryOnUseCase,
 	parameterService *services.ParameterService,
+	isSkipGenerate bool,
+	location string,
 ) *TryOnHandler {
 	return &TryOnHandler{
 		tryOnUseCase:     tryOnUseCase,
 		parameterService: parameterService,
+		isSkipGenerate:   isSkipGenerate,
+		location:         location,
+	}
+}
+
+// 画像生成を行わず、サンプル画像を返す
+func (h *TryOnHandler) getSampleImages(sampleCount int) ([]usecases.ImageOutput, error) {
+	log.Printf("[DEBUG] getSampleImages called with sampleCount: %d", sampleCount)
+
+	// 同じ階層の「sample_images」ディレクトリからsampleCount分の画像を取得する
+	files, err := os.ReadDir("static/sample_images/person")
+	if err != nil {
+		log.Printf("[ERROR] Failed to read sample_images directory: %v", err)
+		return nil, err
+	}
+
+	log.Printf("[DEBUG] Found %d files in sample_images directory", len(files))
+
+	// 画像ファイルのみをフィルタリング
+	var imageFiles []os.DirEntry
+	for _, file := range files {
+		if !file.IsDir() {
+			// 拡張子で画像ファイルを判定
+			name := strings.ToLower(file.Name())
+			if strings.HasSuffix(name, ".jpg") || strings.HasSuffix(name, ".jpeg") ||
+				strings.HasSuffix(name, ".png") || strings.HasSuffix(name, ".gif") {
+				imageFiles = append(imageFiles, file)
+				log.Printf("[DEBUG] Found image file: %s", file.Name())
+			}
+		}
+	}
+
+	if len(imageFiles) == 0 {
+		log.Printf("[ERROR] No image files found in sample_images directory")
+		return nil, fmt.Errorf("sample_imagesディレクトリに画像ファイルが見つかりません")
+	}
+
+	log.Printf("[DEBUG] Filtered to %d image files", len(imageFiles))
+
+	// 実際の画像ファイル数に基づいて処理
+	var images []usecases.ImageOutput
+	for i := range sampleCount {
+		// ファイル数が不足している場合は循環して使用
+		fileIndex := i % len(imageFiles)
+		file := imageFiles[fileIndex]
+
+		filePath := filepath.Join("static/sample_images/person", file.Name())
+		log.Printf("[DEBUG] Reading file %d/%d: %s", i+1, sampleCount, filePath)
+
+		imageData, err := os.ReadFile(filePath)
+		if err != nil {
+			log.Printf("[ERROR] Failed to read file %s: %v", filePath, err)
+			return nil, err
+		}
+
+		log.Printf("[DEBUG] Successfully read file %s, size: %d bytes", file.Name(), len(imageData))
+
+		// ファイル拡張子からMIMEタイプを決定
+		mimeType := "image/jpeg" // デフォルト
+		name := strings.ToLower(file.Name())
+		if strings.HasSuffix(name, ".png") {
+			mimeType = "image/png"
+		} else if strings.HasSuffix(name, ".gif") {
+			mimeType = "image/gif"
+		}
+
+		log.Printf("[DEBUG] Determined MIME type for %s: %s", file.Name(), mimeType)
+
+		images = append(images, usecases.ImageOutput{
+			Data: imageData,
+			Type: mimeType,
+		})
+	}
+
+	log.Printf("[DEBUG] Returning %d images", len(images))
+	return images, nil
+}
+
+func (h *TryOnHandler) HandleTryOn(w http.ResponseWriter, r *http.Request) {
+	if h.isSkipGenerate {
+		log.Printf("[DEBUG] Skip generate mode enabled")
+
+		parameters := h.parameterService.ParseFromRequest(r)
+		sampleCount := parameters.SampleCount
+		log.Printf("[DEBUG] Requested sample count: %d", sampleCount)
+
+		images, err := h.getSampleImages(sampleCount)
+		if err != nil {
+			log.Printf("[ERROR] Failed to get sample images: %v", err)
+			h.sendError(w, "サンプル画像の取得に失敗しました", http.StatusInternalServerError)
+			return
+		}
+
+		log.Printf("[DEBUG] Got %d images from getSampleImages", len(images))
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store, max-age=0")
+
+		response := h.createResponse(images)
+		log.Printf("[DEBUG] Created response, encoding JSON...")
+
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			log.Printf("[ERROR] Failed to encode JSON response: %v", err)
+			h.sendError(w, "レスポンスの生成に失敗しました", http.StatusInternalServerError)
+			return
+		}
+
+		log.Printf("[DEBUG] Successfully sent JSON response")
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxFileSize)
+	if err := r.ParseMultipartForm(maxFileSize); err != nil {
+		h.sendError(w, "画像が大きすぎます（25MBまで対応）", http.StatusRequestEntityTooLarge)
+		return
+	}
+
+	personFile, _, err := r.FormFile("person_image")
+	if err != nil {
+		h.sendError(w, "人物画像を選んでください", http.StatusBadRequest)
+		return
+	}
+	defer personFile.Close()
+
+	garmentFile, _, err := r.FormFile("garment_image")
+	if err != nil {
+		h.sendError(w, "衣服画像を選んでください", http.StatusBadRequest)
+		return
+	}
+	defer garmentFile.Close()
+
+	personData, err := io.ReadAll(personFile)
+	if err != nil {
+		h.sendError(w, "人物画像の読み込みに失敗しました", http.StatusInternalServerError)
+		return
+	}
+
+	garmentData, err := io.ReadAll(garmentFile)
+	if err != nil {
+		h.sendError(w, "衣服画像の読み込みに失敗しました", http.StatusInternalServerError)
+		return
+	}
+
+	parameters := h.parameterService.ParseFromRequest(r)
+
+	input := usecases.TryOnInput{
+		PersonImageData:  personData,
+		GarmentImageData: garmentData,
+		Parameters:       parameters,
+	}
+
+	output, err := h.tryOnUseCase.Execute(r.Context(), input)
+	if err != nil {
+		log.Printf("Virtual Try-On failed: %v", err)
+
+		if h.isQuotaError(err) {
+			h.sendError(w, "現在サーバーが混雑しています。しばらく待ってから再試行してください。", http.StatusTooManyRequests)
+			return
+		}
+
+		hint := "ヒント: 露出や著名人・ロゴ類・過度な加工を避け、人物と衣服がはっきり写る画像で再試行してください。"
+		h.sendError(w, fmt.Sprintf("生成に失敗しました: %v %s", err, hint), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store, max-age=0")
+
+	response := h.createResponseWithStorageInfo(output.Images, parameters.StorageURI)
+
+	log.Printf("[DEBUG] Response: %v", response)
+
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("Failed to encode JSON response: %v", err)
+		h.sendError(w, "レスポンスの生成に失敗しました", http.StatusInternalServerError)
+		return
+	}
+}
+
+func (h *TryOnHandler) createResponse(imagesOutput []usecases.ImageOutput) map[string]any {
+	log.Printf("[DEBUG] createResponse called with %d images", len(imagesOutput))
+
+	var images []map[string]string
+	for i, img := range imagesOutput {
+		// 空のImageOutputをスキップ（防御的プログラミング）
+		if len(img.Data) == 0 {
+			log.Printf("[WARNING] Skipping empty image at index %d", i)
+			continue
+		}
+
+		log.Printf("[DEBUG] Processing image %d: size=%d bytes, type=%s", i, len(img.Data), img.Type)
+
+		base64Data := base64.StdEncoding.EncodeToString(img.Data)
+		log.Printf("[DEBUG] Base64 encoded length: %d characters", len(base64Data))
+
+		// Base64データの最初の100文字をログ出力（デバッグ用）
+		preview := base64Data
+		if len(preview) > 100 {
+			preview = preview[:100] + "..."
+		}
+		log.Printf("[DEBUG] Base64 preview: %s", preview)
+
+		images = append(images, map[string]string{
+			"id":   fmt.Sprintf("image_%d", i),
+			"data": base64Data,
+			"type": img.Type,
+		})
+	}
+
+	log.Printf("[DEBUG] Final response will contain %d images", len(images))
+
+	response := map[string]any{
+		"success": true,
+		"images":  images,
+	}
+
+	return response
+}
+
+func (h *TryOnHandler) createResponseWithStorageInfo(imagesOutput []usecases.ImageOutput, storageURI string) map[string]any {
+	log.Printf("[DEBUG] createResponseWithStorageInfo called with %d images, storageURI: %s", len(imagesOutput), storageURI)
+
+	// Storage URI指定時の処理
+	if storageURI != "" {
+		log.Printf("[INFO] Storage URI specified, creating success response: %s", storageURI)
+		response := map[string]any{
+			"success":    true,
+			"images":     []map[string]string{}, // 空の画像配列
+			"storageUri": storageURI,
+		}
+		return response
+	}
+
+	// Storage URI未指定時は通常の処理
+	return h.createResponse(imagesOutput)
+}
+
+func (h *TryOnHandler) HandleHealth(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("ok"))
+}
+
+func (h *TryOnHandler) isQuotaError(err error) bool {
+	return fmt.Sprintf("%v", err) != "" &&
+		(fmt.Sprintf("%v", err) == "service temporarily unavailable due to high demand")
+}
+
+func (h *TryOnHandler) sendError(w http.ResponseWriter, message string, statusCode int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(map[string]string{"error": message})
+}
+
+// SampleImage represents a sample image metadata
+type SampleImage struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	URL         string `json:"url"`
+	Category    string `json:"category"`
+}
+
+// HandleSampleImages サンプル画像一覧を返すAPIエンドポイント
+func (h *TryOnHandler) HandleSampleImages(w http.ResponseWriter, r *http.Request) {
+	// カテゴリパラメータを取得（person または garment）
+	category := r.URL.Query().Get("category")
+	if category == "" {
+		h.sendError(w, "categoryパラメータが必要です (person または garment)", http.StatusBadRequest)
+		return
+	}
+
+	if category != "person" && category != "garment" {
+		h.sendError(w, "categoryは 'person' または 'garment' である必要があります", http.StatusBadRequest)
+		return
+	}
+
+	var samples []SampleImage
+
+	if category == "person" {
+		samples = []SampleImage{
+			{
+				ID:          "person_men",
+				Name:        "男性 (一般)",
+				Description: "カジュアルな服装の男性",
+				URL:         "/static/sample_images/person/sample_men.png",
+				Category:    "person",
+			},
+			{
+				ID:          "person_men_50",
+				Name:        "男性 (50代)",
+				Description: "フォーマルな服装の中年男性",
+				URL:         "/static/sample_images/person/sample_men_50.png",
+				Category:    "person",
+			},
+			{
+				ID:          "person_women_20",
+				Name:        "女性 (20代)",
+				Description: "カジュアルな服装の若い女性",
+				URL:         "/static/sample_images/person/sample_women_20.png",
+				Category:    "person",
+			},
+			{
+				ID:          "person_women_70",
+				Name:        "女性 (70代)",
+				Description: "エレガントな服装のシニア女性",
+				URL:         "/static/sample_images/person/sample_women_70.png",
+				Category:    "person",
+			},
+		}
+	} else {
+		samples = []SampleImage{
+			{
+				ID:          "garment_tops",
+				Name:        "トップス (ベーシック)",
+				Description: "シンプルなデザインのトップス",
+				URL:         "/static/sample_images/garment/sample_tops.png",
+				Category:    "garment",
+			},
+			{
+				ID:          "garment_tops_hade",
+				Name:        "トップス (派手)",
+				Description: "カラフルで目立つデザインのトップス",
+				URL:         "/static/sample_images/garment/sample_tops_hade.png",
+				Category:    "garment",
+			},
+			{
+				ID:          "garment_pants",
+				Name:        "パンツ",
+				Description: "カジュアルなパンツ",
+				URL:         "/static/sample_images/garment/sample_pants.png",
+				Category:    "garment",
+			},
+			{
+				ID:          "garment_shoes",
+				Name:        "シューズ",
+				Description: "スタイリッシュなシューズ",
+				URL:         "/static/sample_images/garment/sample_shoes.png",
+				Category:    "garment",
+			},
+			{
+				ID:          "garment_shoes_double",
+				Name:        "シューズ（両足）",
+				Description: "スタイリッシュなシューズ（両足）",
+				URL:         "/static/sample_images/garment/sample_shoes_double.png",
+				Category:    "garment",
+			},
+			{
+				ID:          "garment_neckless",
+				Name:        "ネックレス",
+				Description: "エレガントなネックレス",
+				URL:         "/static/sample_images/garment/sample_neckless.png",
+				Category:    "garment",
+			},
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "public, max-age=3600") // 1時間キャッシュ
+
+	response := map[string]interface{}{
+		"success": true,
+		"samples": samples,
+	}
+
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("Failed to encode sample images response: %v", err)
+		h.sendError(w, "レスポンスの生成に失敗しました", http.StatusInternalServerError)
+		return
 	}
 }
 
 func (h *TryOnHandler) HandleIndex(w http.ResponseWriter, r *http.Request) {
+	// 現在のVertex AIリージョン情報をツールチップに含める
+	locationInfo := fmt.Sprintf(" 現在のVertex AIリージョン: %s", h.location)
+
 	html := `<!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -62,21 +440,33 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-seri
 <div>
 <label class="block text-lg font-semibold mb-2 text-gray-700">1. 人物画像</label>
 <div id="person-preview" class="preview-box rounded-lg mb-3"><span class="text-gray-500">プレビュー</span></div>
+<div class="flex flex-wrap gap-2 mb-2">
 <label class="inline-flex items-center px-4 py-2 rounded-full bg-gradient-to-r from-indigo-500 to-blue-500 text-white shadow hover:shadow-lg cursor-pointer">
 <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6H17a3 3 0 010 6h-1m-4 5V10m0 0l-2 2m2-2l2 2"/></svg>
 <span>ファイルを選択</span>
-<input type="file" id="person-image" name="person_image" accept="image/*" class="hidden" required>
+<input type="file" id="person-image" name="person_image" accept="image/*" class="hidden">
 </label>
+<button type="button" id="person-sample-btn" class="inline-flex items-center px-4 py-2 rounded-full bg-gradient-to-r from-green-500 to-teal-500 text-white shadow hover:shadow-lg">
+<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+<span>サンプルから選択</span>
+</button>
+</div>
 <span id="person-name" class="ml-2 text-sm text-gray-500"></span>
 </div>
 <div>
 <label class="block text-lg font-semibold mb-2 text-gray-700">2. 衣服画像</label>
 <div id="garment-preview" class="preview-box rounded-lg mb-3"><span class="text-gray-500">プレビュー</span></div>
+<div class="flex flex-wrap gap-2 mb-2">
 <label class="inline-flex items-center px-4 py-2 rounded-full bg-gradient-to-r from-indigo-500 to-blue-500 text-white shadow hover:shadow-lg cursor-pointer">
 <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6H17a3 3 0 010 6h-1m-4 5V10m0 0l-2 2m2-2l2 2"/></svg>
 <span>ファイルを選択</span>
-<input type="file" id="garment-image" name="garment_image" accept="image/*" class="hidden" required>
+<input type="file" id="garment-image" name="garment_image" accept="image/*" class="hidden">
 </label>
+<button type="button" id="garment-sample-btn" class="inline-flex items-center px-4 py-2 rounded-full bg-gradient-to-r from-green-500 to-teal-500 text-white shadow hover:shadow-lg">
+<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+<span>サンプルから選択</span>
+</button>
+</div>
 <span id="garment-name" class="ml-2 text-sm text-gray-500"></span>
 </div>
 </div>
@@ -186,7 +576,7 @@ Compression Quality (JPEG用)
 Storage URI (オプション)
 <div class="tooltip">
 <span class="info-icon">?</span>
-<span class="tooltiptext">生成画像をGoogle Cloud Storageに保存する場合のバケットパスです。空白の場合は直接レスポンスで返されます。形式例: gs://your-bucket/path/</span>
+` + fmt.Sprintf(`<span class="tooltiptext">生成画像をGoogle Cloud Storageに保存する場合のバケットパスです。空白の場合は直接レスポンスで返されます。形式例: gs://your-bucket/path/ ※重要：バケットとVertex AIのリージョンを一致させてください（不一致の場合はエラーになります）%s</span>`, locationInfo) + `
 </div>
 </label>
 <input type="text" name="storage_uri" placeholder="gs://your-bucket/path/" class="w-full px-3 py-2 border border-gray-300 rounded-md">
@@ -219,6 +609,29 @@ class="px-4 py-2 text-sm rounded-full border border-gray-300 text-gray-700 hover
 </div>
 <div id="error-message" class="mt-6 hidden bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg"></div>
 </main>
+
+<!-- サンプル画像選択モーダル -->
+<div id="sample-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50">
+<div class="flex items-center justify-center min-h-screen p-4">
+<div class="bg-white rounded-lg max-w-5xl w-full max-h-[95vh] overflow-hidden flex flex-col">
+<div class="p-6 border-b border-gray-200">
+<div class="flex justify-between items-center">
+<h2 id="modal-title" class="text-2xl font-bold text-gray-800">サンプル画像を選択</h2>
+<button id="close-modal" class="text-gray-500 hover:text-gray-700 text-2xl font-bold">&times;</button>
+</div>
+</div>
+<div class="flex-1 overflow-y-auto p-6">
+<div id="sample-grid" class="grid grid-cols-2 md:grid-cols-3 gap-6">
+<!-- サンプル画像がここに動的に追加される -->
+</div>
+</div>
+<div class="p-6 border-t border-gray-200 text-center">
+<button id="cancel-sample" class="px-6 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400">キャンセル</button>
+</div>
+</div>
+</div>
+</div>
+
 <footer class="text-center mt-8 text-gray-500 text-sm">
 </footer>
 </div>
@@ -245,6 +658,20 @@ const mimeTypeSelect = document.getElementById('mime-type-select');
 const compressionQualityInput = document.getElementById('compression-quality-input');
 const compressionWarning = document.getElementById('compression-warning');
 
+// サンプル画像選択関連の要素
+const personSampleBtn = document.getElementById('person-sample-btn');
+const garmentSampleBtn = document.getElementById('garment-sample-btn');
+const sampleModal = document.getElementById('sample-modal');
+const modalTitle = document.getElementById('modal-title');
+const sampleGrid = document.getElementById('sample-grid');
+const closeModal = document.getElementById('close-modal');
+const cancelSample = document.getElementById('cancel-sample');
+
+// 現在選択中のサンプル画像を追跡するための変数
+let currentPersonSample = null;
+let currentGarmentSample = null;
+let currentModalCategory = null;
+
 function setupPreview(input, previewElement, nameLabel) {
     input.addEventListener('change', (event) => {
         const file = event.target.files[0];
@@ -260,6 +687,94 @@ function setupPreview(input, previewElement, nameLabel) {
         }
     });
 }
+
+// サンプル画像関連の関数
+async function loadSampleImages(category) {
+    try {
+        const response = await fetch('/api/sample-images?category=' + category);
+        if (!response.ok) {
+            throw new Error('Failed to load sample images');
+        }
+        const data = await response.json();
+        return data.samples || [];
+    } catch (error) {
+        console.error('Error loading sample images:', error);
+        return [];
+    }
+}
+
+function showSampleModal(category) {
+    currentModalCategory = category;
+    modalTitle.textContent = category === 'person' ? '人物画像を選択' : '衣服画像を選択';
+    sampleModal.classList.remove('hidden');
+    
+    // サンプル画像を読み込んで表示
+    loadSampleImages(category).then(samples => {
+        sampleGrid.innerHTML = '';
+        samples.forEach(sample => {
+            const sampleItem = document.createElement('div');
+            sampleItem.className = 'border rounded-lg p-4 cursor-pointer hover:border-blue-500 hover:shadow-md transition-all';
+            sampleItem.innerHTML = 
+                '<div class="w-full h-48 bg-gray-100 rounded mb-3 flex items-center justify-center overflow-hidden">' +
+                '<img src="' + sample.url + '" alt="' + sample.name + '" class="max-w-full max-h-full object-contain">' +
+                '</div>' +
+                '<h3 class="font-semibold text-sm text-gray-800 mb-1">' + sample.name + '</h3>' +
+                '<p class="text-xs text-gray-600 leading-relaxed">' + sample.description + '</p>';
+            
+            sampleItem.addEventListener('click', () => {
+                selectSampleImage(sample, category);
+            });
+            
+            sampleGrid.appendChild(sampleItem);
+        });
+    });
+}
+
+function selectSampleImage(sample, category) {
+    if (category === 'person') {
+        currentPersonSample = sample;
+        personPreview.innerHTML = '<img src="' + sample.url + '" alt="' + sample.name + '">';
+        personName.textContent = sample.name + ' (サンプル)';
+        // ファイル入力をクリアしてサンプル使用を示す
+        personInput.value = '';
+        personInput.removeAttribute('required');
+    } else {
+        currentGarmentSample = sample;
+        garmentPreview.innerHTML = '<img src="' + sample.url + '" alt="' + sample.name + '">';
+        garmentName.textContent = sample.name + ' (サンプル)';
+        // ファイル入力をクリアしてサンプル使用を示す
+        garmentInput.value = '';
+        garmentInput.removeAttribute('required');
+    }
+    
+    // モーダルを閉じる
+    sampleModal.classList.add('hidden');
+}
+
+function closeSampleModal() {
+    sampleModal.classList.add('hidden');
+    currentModalCategory = null;
+}
+
+// サンプル画像ボタンのイベントリスナー
+personSampleBtn.addEventListener('click', () => {
+    showSampleModal('person');
+});
+
+garmentSampleBtn.addEventListener('click', () => {
+    showSampleModal('garment');
+});
+
+// モーダル関連のイベントリスナー
+closeModal.addEventListener('click', closeSampleModal);
+cancelSample.addEventListener('click', closeSampleModal);
+
+// モーダルの背景クリックで閉じる
+sampleModal.addEventListener('click', (event) => {
+    if (event.target === sampleModal) {
+        closeSampleModal();
+    }
+});
 
 // 詳細設定の表示/非表示切り替え
 toggleAdvancedBtn.addEventListener('click', () => {
@@ -325,6 +840,14 @@ clearBtn.addEventListener('click', () => {
     resultSection.classList.add('hidden');
     errorMessage.classList.add('hidden');
     
+    // サンプル画像の選択もリセット
+    currentPersonSample = null;
+    currentGarmentSample = null;
+    
+    // required属性を復元
+    personInput.setAttribute('required', 'required');
+    garmentInput.setAttribute('required', 'required');
+    
     // 詳細設定もリセット
     document.querySelector('select[name="add_watermark"]').value = 'true';
     document.querySelector('input[name="base_steps"]').value = '32';
@@ -343,12 +866,23 @@ clearBtn.addEventListener('click', () => {
 
 form.addEventListener('submit', async (event) => {
     event.preventDefault();
+    
+    // サンプル画像とファイルアップロードのどちらを使用するかをチェック
     const p = personInput.files[0];
     const g = garmentInput.files[0];
-    if (!p || !g) return;
+    
+    const hasPersonImage = p || currentPersonSample;
+    const hasGarmentImage = g || currentGarmentSample;
+    
+    if (!hasPersonImage || !hasGarmentImage) {
+        errorMessage.textContent = '人物画像と衣服画像の両方を選択してください（ファイルアップロードまたはサンプルから）';
+        errorMessage.classList.remove('hidden');
+        return;
+    }
 
     const MAX = 25 * 1024 * 1024;
-    if (p.size > MAX || g.size > MAX) {
+    // ファイルアップロード使用時のみサイズチェック
+    if ((p && p.size > MAX) || (g && g.size > MAX)) {
         errorMessage.textContent = '画像が大きすぎます（25MBまで対応）';
         errorMessage.classList.remove('hidden');
         return;
@@ -366,11 +900,57 @@ form.addEventListener('submit', async (event) => {
     errorMessage.classList.add('hidden');
 
     const formData = new FormData();
-    formData.append('person_image', p);
-    formData.append('garment_image', g);
+    
+    // StorageURIを事前に初期化してフォーム要素から取得
+    let storageUri = '';
+    const formElements = document.querySelectorAll('#advanced-settings input, #advanced-settings select');
+    formElements.forEach(element => {
+        if (element.name === 'storage_uri' && element.value) {
+            storageUri = element.value;
+        }
+    });
+    
+    // デバッグ用ログ
+    if (storageUri) {
+        console.log('[DEBUG] StorageURI specified:', storageUri);
+    } else {
+        console.log('[DEBUG] StorageURI not specified, images will be returned in response');
+    }
+    
+    // サンプル画像を使用する場合の処理
+    if (currentPersonSample && !p) {
+        // サンプル画像のURLから画像データを取得してFormDataに追加
+        try {
+            const response = await fetch(currentPersonSample.url);
+            const blob = await response.blob();
+            formData.append('person_image', blob, 'sample_person.png');
+        } catch (error) {
+            console.error('Failed to load person sample image:', error);
+            errorMessage.textContent = '人物サンプル画像の読み込みに失敗しました';
+            errorMessage.classList.remove('hidden');
+            return;
+        }
+    } else {
+        formData.append('person_image', p);
+    }
+    
+    if (currentGarmentSample && !g) {
+        // サンプル画像のURLから画像データを取得してFormDataに追加
+        try {
+            const response = await fetch(currentGarmentSample.url);
+            const blob = await response.blob();
+            formData.append('garment_image', blob, 'sample_garment.png');
+        } catch (error) {
+            console.error('Failed to load garment sample image:', error);
+            errorMessage.textContent = '衣服サンプル画像の読み込みに失敗しました';
+            errorMessage.classList.remove('hidden');
+            return;
+        }
+    } else {
+        formData.append('garment_image', g);
+    }
     
     // フォームの全てのパラメータを追加
-    const formElements = document.querySelectorAll('#advanced-settings input, #advanced-settings select');
     formElements.forEach(element => {
         if (element.name && element.value) {
             formData.append(element.name, element.value);
@@ -391,12 +971,25 @@ form.addEventListener('submit', async (event) => {
         const contentType = resp.headers.get('content-type');
         if (contentType && contentType.includes('application/json')) {
             const data = await resp.json();
-            if (data.success && data.images && data.images.length > 0) {
-                resultDisplay.style.display = 'none';
-                multipleResults.style.display = 'grid';
-                multipleResults.innerHTML = '';
-                
-                data.images.forEach((img, index) => {
+            if (data.success) {
+                // Storage URIが指定されている場合の処理
+                if (data.storageUri) {
+                    // Storage URI指定時は保存成功メッセージを表示
+                    resultDisplay.style.display = 'flex';
+                    multipleResults.style.display = 'none';
+                    resultDisplay.innerHTML = '<div class="text-center p-8">' +
+                        '<div class="text-green-600 text-6xl mb-4">✓</div>' +
+                        '<h3 class="text-xl font-semibold text-gray-800 mb-2">画像生成が完了しました</h3>' +
+                        '<p class="text-gray-600 mb-4">生成された画像は以下の場所に保存されました:</p>' +
+                        '<p class="text-blue-600 font-mono bg-blue-50 px-4 py-2 rounded-lg">' + data.storageUri + '</p>' +
+                        '<p class="text-sm text-gray-500 mt-4">Google Cloud Storageで画像を確認してください</p>' +
+                        '</div>';
+                } else if (data.images && data.images.length > 0) {
+                    resultDisplay.style.display = 'none';
+                    multipleResults.style.display = 'grid';
+                    multipleResults.innerHTML = '';
+                    
+                    data.images.forEach((img, index) => {
                     const imgContainer = document.createElement('div');
                     imgContainer.className = 'relative';
                     
@@ -453,8 +1046,12 @@ form.addEventListener('submit', async (event) => {
                     imgContainer.appendChild(saveBtn);
                     multipleResults.appendChild(imgContainer);
                 });
+                } else {
+                    // Storage URIも画像データもない場合
+                    throw new Error('画像の生成または保存に失敗しました');
+                }
             } else {
-                throw new Error('Invalid response format');
+                throw new Error('生成に失敗しました');
             }
         } else {
             const blob = await resp.blob();
@@ -531,99 +1128,4 @@ form.addEventListener('submit', async (event) => {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store, max-age=0")
 	w.Write([]byte(html))
-}
-
-func (h *TryOnHandler) HandleTryOn(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, maxFileSize)
-	if err := r.ParseMultipartForm(maxFileSize); err != nil {
-		h.sendError(w, "画像が大きすぎます（25MBまで対応）", http.StatusRequestEntityTooLarge)
-		return
-	}
-
-	personFile, _, err := r.FormFile("person_image")
-	if err != nil {
-		h.sendError(w, "人物画像を選んでください", http.StatusBadRequest)
-		return
-	}
-	defer personFile.Close()
-
-	garmentFile, _, err := r.FormFile("garment_image")
-	if err != nil {
-		h.sendError(w, "衣服画像を選んでください", http.StatusBadRequest)
-		return
-	}
-	defer garmentFile.Close()
-
-	personData, err := io.ReadAll(personFile)
-	if err != nil {
-		h.sendError(w, "人物画像の読み込みに失敗しました", http.StatusInternalServerError)
-		return
-	}
-
-	garmentData, err := io.ReadAll(garmentFile)
-	if err != nil {
-		h.sendError(w, "衣服画像の読み込みに失敗しました", http.StatusInternalServerError)
-		return
-	}
-
-	parameters := h.parameterService.ParseFromRequest(r)
-
-	input := usecases.TryOnInput{
-		PersonImageData:  personData,
-		GarmentImageData: garmentData,
-		Parameters:       parameters,
-	}
-
-	output, err := h.tryOnUseCase.Execute(r.Context(), input)
-	if err != nil {
-		log.Printf("Virtual Try-On failed: %v", err)
-
-		if h.isQuotaError(err) {
-			h.sendError(w, "現在サーバーが混雑しています。しばらく待ってから再試行してください。", http.StatusTooManyRequests)
-			return
-		}
-
-		hint := "ヒント: 露出や著名人・ロゴ類・過度な加工を避け、人物と衣服がはっきり写る画像で再試行してください。"
-		h.sendError(w, fmt.Sprintf("生成に失敗しました: %v %s", err, hint), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "no-store, max-age=0")
-
-	var images []map[string]string
-	for i, img := range output.Images {
-		images = append(images, map[string]string{
-			"id":   fmt.Sprintf("image_%d", i),
-			"data": base64.StdEncoding.EncodeToString(img.Data),
-			"type": img.Type,
-		})
-	}
-
-	response := map[string]any{
-		"success": true,
-		"images":  images,
-	}
-
-	if err := json.NewEncoder(w).Encode(response); err != nil {
-		log.Printf("Failed to encode JSON response: %v", err)
-		h.sendError(w, "レスポンスの生成に失敗しました", http.StatusInternalServerError)
-		return
-	}
-}
-
-func (h *TryOnHandler) HandleHealth(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("ok"))
-}
-
-func (h *TryOnHandler) isQuotaError(err error) bool {
-	return fmt.Sprintf("%v", err) != "" &&
-		(fmt.Sprintf("%v", err) == "service temporarily unavailable due to high demand")
-}
-
-func (h *TryOnHandler) sendError(w http.ResponseWriter, message string, statusCode int) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(map[string]string{"error": message})
 }

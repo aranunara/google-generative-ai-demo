@@ -11,7 +11,7 @@ Google Cloud Vertex AI Virtual Try-On APIを利用したバーチャル試着デ
 - **言語**: Go 1.24.2
 - **アーキテクチャ**: Clean Architecture
 - **開発手法**: TDD (Test-Driven Development)
-- **フレームワーク**: 
+- **フレームワーク**:
   - Gorilla Mux (HTTPルーター)
   - Google Cloud Vertex AI SDK
 - **インフラ**: Docker, Google Cloud Run, nginx
@@ -29,7 +29,7 @@ Google Cloud Vertex AI Virtual Try-On APIを利用したバーチャル試着デ
 
 Clean Architectureパターンを採用し、レイヤー分離による保守性と拡張性を実現しています。
 
-```
+```plaintext
 internal/
 ├── domain/              # ドメイン層
 │   ├── entities/       # エンティティ（ビジネスオブジェクト）
@@ -52,6 +52,8 @@ internal/
 - Go 1.24.2+
 - Docker & Docker Compose
 - Google Cloud SDK (認証使用時)
+- **重要**: Vertex AI リージョンは `us-central1` を使用してください
+  - `asia-northeast1` では Virtual Try-On API が利用できません
 
 ### 実行方法
 
@@ -110,6 +112,10 @@ go vet ./...
 
 - 各画像ファイルは最大25MB
 - API呼び出し頻度制限: 10回/分（nginx使用時）
+
+**コスト:**
+
+- 生成1回につき約20円（Vertex AI Virtual Try-On API利用料金）
 
 ### GET /healthz
 

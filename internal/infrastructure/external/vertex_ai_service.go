@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"time"
 
@@ -113,17 +114,17 @@ func (s *VertexAIService) generateWithREST(ctx context.Context, request *entitie
 	garmentB64 := request.GarmentImage().ToBase64()
 
 	params := request.Parameters()
-	
+
 	// outputOptionsを構築（CompressionQualityは条件付きで追加）
 	outputOptions := map[string]interface{}{
 		"mimeType": string(params.OutputMimeType()),
 	}
-	
+
 	// CompressionQualityが0より大きい場合のみ追加
 	if params.CompressionQuality() > 0 {
 		outputOptions["compressionQuality"] = params.CompressionQuality()
 	}
-	
+
 	// parametersを構築（条件付きパラメータは後から追加）
 	parameters := map[string]interface{}{
 		"addWatermark":     params.AddWatermark(),
@@ -133,17 +134,17 @@ func (s *VertexAIService) generateWithREST(ctx context.Context, request *entitie
 		"sampleCount":      params.SampleCount(),
 		"outputOptions":    outputOptions,
 	}
-	
+
 	// Storage URIが空でない場合のみ追加
 	if params.StorageURI() != "" {
 		parameters["storageUri"] = params.StorageURI()
 	}
-	
+
 	// Watermarkが無効かつSeedが0より大きい場合のみSeedを追加
 	if !params.AddWatermark() && params.Seed() > 0 {
 		parameters["seed"] = params.Seed()
 	}
-	
+
 	apiRequest := map[string]interface{}{
 		"instances": []map[string]interface{}{
 			{
@@ -168,6 +169,19 @@ func (s *VertexAIService) generateWithREST(ctx context.Context, request *entitie
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
+
+	// デバッグ用：リクエストの詳細をログ出力（画像データは除く）
+	debugRequest := make(map[string]interface{})
+	for k, v := range apiRequest {
+		if k == "instances" {
+			// 画像データを除いたデバッグ用の簡略版
+			debugRequest[k] = "【画像データ省略】"
+		} else {
+			debugRequest[k] = v
+		}
+	}
+	debugJSON, _ := json.MarshalIndent(debugRequest, "", "  ")
+	fmt.Printf("[DEBUG] API Request (without image data): %s\n", string(debugJSON))
 
 	url := fmt.Sprintf("https://%s-aiplatform.googleapis.com/v1/projects/%s/locations/%s/publishers/google/models/%s:predict",
 		s.location, s.projectID, s.location, s.vtoModel)
@@ -205,6 +219,15 @@ func (s *VertexAIService) generateWithREST(ctx context.Context, request *entitie
 		return nil, fmt.Errorf("no predictions in response")
 	}
 
+	// Storage URIが指定されている場合の処理
+	if params.StorageURI() != "" {
+		// Storage URI指定時は200レスポンスが返ってきた時点で成功
+		// 空のImageDataリストでTryOnResultを作成（フロントエンド側で保存成功を表示）
+		log.Printf("[INFO] Images saved to Storage URI: %s", params.StorageURI())
+		return entities.NewTryOnResult(request.ID(), []*valueobjects.ImageData{}), nil
+	}
+
+	// 通常の画像データ処理（Storage URI未指定時）
 	var images []*valueobjects.ImageData
 	for i, prediction := range predResp.Predictions {
 		imageB64 := prediction.BytesBase64Encoded

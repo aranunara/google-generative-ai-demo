@@ -9,7 +9,7 @@ bin = "./tmp/main"
 # 監視対象の拡張子
 include_ext = ["go", "tpl", "tmpl", "html", "env"]
 # 除外するディレクトリ
-exclude_dir = ["assets", "tmp", "vendor", "google-cloud-sdk", ".git", "node_modules"]
+exclude_dir = [".serena", "tmp", ".claude", "docs"]
 # ファイル変更後の遅延時間
 delay = 1000 # ms
 # エラー時に停止

@@ -50,3 +50,6 @@ tryon-demo
 .cursorrules
 main.go.backup
 ARCHITECTURE.md
+
+cmd/base64/images/*
+cmd/base64/encoded/*

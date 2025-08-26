@@ -3,13 +3,11 @@ package model
 import (
 	"encoding/json"
 	"testing"
-
-	"tryon-demo/test/http"
 )
 
 func TestVirtualTryOnResponseParsing(t *testing.T) {
 	// Get the response JSON from the test data
-	responseJSON := http.VirtualTryOnResponse()
+	responseJSON := GetExpectResponse()
 
 	// Parse the JSON into our struct
 	var response VirtualTryOnResponse
@@ -49,7 +47,7 @@ func TestVirtualTryOnResponseParsing(t *testing.T) {
 	}
 
 	t.Logf("Successfully parsed response with %d predictions", len(response.Predictions))
-	t.Logf("First prediction: MimeType=%s, Base64Length=%d", 
+	t.Logf("First prediction: MimeType=%s, Base64Length=%d",
 		firstPrediction.MimeType, len(firstPrediction.BytesBase64Encoded))
 }
 
