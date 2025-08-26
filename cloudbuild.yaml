@@ -19,7 +19,7 @@ steps:
     args: [
       'build',
       # CloudBuildはリージョンに制限がある
-      '-t', '${_DOCKER_PATH_PREFIX}.pkg.dev/${_PROJECT_ID}/${_PARENT_DIR}/${_PROJECT_NAME}/${_PROJECT_NAME}:${_COMMIT_SHA}',
+      '-t', '${_DOCKER_PATH_PREFIX}.pkg.dev/$PROJECT_ID/${_PARENT_DIR}/${_PROJECT_NAME}/${_PROJECT_NAME}:$COMMIT_SHA',
       '.'  # Dockerfile があるディレクトリ
     ]
 
@@ -27,7 +27,7 @@ steps:
   - name: 'gcr.io/cloud-builders/docker'
     args: [
       'push',
-      '${_DOCKER_PATH_PREFIX}.pkg.dev/${_PROJECT_ID}/${_PARENT_DIR}/${_PROJECT_NAME}/${_PROJECT_NAME}:${_COMMIT_SHA}'
+      '${_DOCKER_PATH_PREFIX}.pkg.dev/$PROJECT_ID/${_PARENT_DIR}/${_PROJECT_NAME}/${_PROJECT_NAME}:$COMMIT_SHA'
     ]
 
   # Cloud Run へのデプロイ (gcloud コマンドを使用)
@@ -37,7 +37,7 @@ steps:
       'run',
       'deploy',
       'tryon-demo',  # Cloud Run サービス名
-      '--image', '${_DOCKER_PATH_PREFIX}.pkg.dev/${_PROJECT_ID}/${_PARENT_DIR}/${_PROJECT_NAME}/${_PROJECT_NAME}:${_COMMIT_SHA}',
+      '--image', '${_DOCKER_PATH_PREFIX}.pkg.dev/$PROJECT_ID/${_PARENT_DIR}/${_PROJECT_NAME}/${_PROJECT_NAME}:$COMMIT_SHA',
       '--region', '${_PROJECT_REGION}',
       '--platform', 'managed',
       '--allow-unauthenticated', # 必要に応じて認証設定を変更
@@ -54,4 +54,4 @@ options:
 
 # イメージを登録するリポジトリを指定
 images:
-  - '${_DOCKER_PATH_PREFIX}.pkg.dev/${_PROJECT_ID}/${_PARENT_DIR}/${_PROJECT_NAME}/${_PROJECT_NAME}:${_COMMIT_SHA}'
+  - '${_DOCKER_PATH_PREFIX}.pkg.dev/$PROJECT_ID/${_PARENT_DIR}/${_PROJECT_NAME}/${_PROJECT_NAME}:$COMMIT_SHA'
