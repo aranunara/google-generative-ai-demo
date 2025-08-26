@@ -4,13 +4,15 @@
       "Bash(mkdir:*)",
       "Bash(mv:*)",
       "Bash(rm:*)",
-      "Bash(go test:*)"
+      "Bash(go test:*)",
+      "mcp__serena__list_dir",
+      "mcp__serena__find_symbol"
     ],
     "deny": [],
     "ask": []
   },
+  "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
     "serena"
-  ],
-  "enableAllProjectMcpServers": true
+  ]
 }

@@ -1,0 +1,57 @@
+steps:
+  # 環境変数の設定
+  - name: 'gcr.io/cloud-builders/docker'
+    entrypoint: "bash"
+    args:
+      - "-c"
+      - |
+        echo "VTO_MODEL=${_VTO_MODEL}" >> .env
+        echo "USE_SDK=${_USE_SDK}" >> .env
+        echo "SERVICE_ACCOUNT=${_SERVICE_ACCOUNT}" >> .env
+        echo "DOCKER_PATH_PREFIX=${_DOCKER_PATH_PREFIX}" >> .env
+        echo "PARENT_DIR=${_PARENT_DIR}" >> .env
+        echo "PROJECT_NAME=${_PROJECT_NAME}" >> .env
+        echo "PROJECT_REGION=${_PROJECT_REGION}" >> .env
+        echo "REST_LOCATION=${_REST_LOCATION}" >> .env
+
+  # Docker イメージのビルド
+  - name: 'gcr.io/cloud-builders/docker'
+    args: [
+      'build',
+      # CloudBuildはリージョンに制限がある
+      '-t', '$DOCKER_PATH_PREFIX/$PROJECT_ID/$PARENT_DIR/$PROJECT_NAME/$PROJECT_NAME:$COMMIT_SHA',
+      '.'  # Dockerfile があるディレクトリ
+    ]
+
+  # Docker イメージを Artifact Registry に push
+  - name: 'gcr.io/cloud-builders/docker'
+    args: [
+      'push',
+      '$DOCKER_PATH_PREFIX/$PROJECT_ID/$PARENT_DIR/$PROJECT_NAME/$PROJECT_NAME:$COMMIT_SHA'
+    ]
+
+  # Cloud Run へのデプロイ (gcloud コマンドを使用)
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args: [
+      'run',
+      'deploy',
+      'tryon-demo',  # Cloud Run サービス名
+      '--image', '$DOCKER_PATH_PREFIX/$PROJECT_ID/$PARENT_DIR/$PROJECT_NAME/$PROJECT_NAME:$COMMIT_SHA',
+      '--region', '$PROJECT_REGION',
+      '--platform', 'managed',
+      '--allow-unauthenticated', # 必要に応じて認証設定を変更
+      '--service-account', '$SERVICE_ACCOUNT',
+      '--project', '$PROJECT_ID',
+      '--max-instances', '10', #Knative Service YAMLから
+      '--concurrency', '80',   #Knative Service YAMLから
+      '--timeout', '300',      #Knative Service YAMLから
+    ]
+
+# ログの設定 (zozo-analytics_cloudbuild を選択)
+options:
+  defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET
+
+# イメージを登録するリポジトリを指定
+images:
+  - '$DOCKER_PATH_PREFIX/$PROJECT_ID/$PARENT_DIR/$PROJECT_NAME/$PROJECT_NAME:$COMMIT_SHA'
