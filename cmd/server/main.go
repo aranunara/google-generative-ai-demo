@@ -19,6 +19,9 @@ func main() {
 	// Get configuration from environment variables
 	projectID := os.Getenv("PROJECT_ID")
 	if projectID == "" {
+		projectID = os.Getenv("GOOGLE_CLOUD_PROJECT")
+	}
+	if projectID == "" {
 		log.Fatal("環境変数 PROJECT_ID が未設定です")
 	}
 
