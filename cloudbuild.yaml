@@ -19,7 +19,7 @@ steps:
     args: [
       'build',
       # CloudBuildはリージョンに制限がある
-      '-t', '$DOCKER_PATH_PREFIX.pkg.dev/$PROJECT_ID/$PARENT_DIR/$PROJECT_NAME/$PROJECT_NAME:$COMMIT_SHA',
+      '-t', '${_DOCKER_PATH_PREFIX}.pkg.dev/${_PROJECT_ID}/${_PARENT_DIR}/${_PROJECT_NAME}/${_PROJECT_NAME}:${_COMMIT_SHA}',
       '.'  # Dockerfile があるディレクトリ
     ]
 
@@ -27,7 +27,7 @@ steps:
   - name: 'gcr.io/cloud-builders/docker'
     args: [
       'push',
-      '$DOCKER_PATH_PREFIX.pkg.dev/$PROJECT_ID/$PARENT_DIR/$PROJECT_NAME/$PROJECT_NAME:$COMMIT_SHA'
+      '${_DOCKER_PATH_PREFIX}.pkg.dev/${_PROJECT_ID}/${_PARENT_DIR}/${_PROJECT_NAME}/${_PROJECT_NAME}:${_COMMIT_SHA}'
     ]
 
   # Cloud Run へのデプロイ (gcloud コマンドを使用)
@@ -37,11 +37,11 @@ steps:
       'run',
       'deploy',
       'tryon-demo',  # Cloud Run サービス名
-      '--image', '$DOCKER_PATH_PREFIX.pkg.dev/$PROJECT_ID/$PARENT_DIR/$PROJECT_NAME/$PROJECT_NAME:$COMMIT_SHA',
-      '--region', '$PROJECT_REGION',
+      '--image', '${_DOCKER_PATH_PREFIX}.pkg.dev/${_PROJECT_ID}/${_PARENT_DIR}/${_PROJECT_NAME}/${_PROJECT_NAME}:${_COMMIT_SHA}',
+      '--region', '${_PROJECT_REGION}',
       '--platform', 'managed',
       '--allow-unauthenticated', # 必要に応じて認証設定を変更
-      '--service-account', '$SERVICE_ACCOUNT',
+      '--service-account', '${_SERVICE_ACCOUNT}',
       '--project', '$PROJECT_ID',
       '--max-instances', '10', #Knative Service YAMLから
       '--concurrency', '80',   #Knative Service YAMLから
@@ -54,4 +54,4 @@ options:
 
 # イメージを登録するリポジトリを指定
 images:
-  - '$DOCKER_PATH_PREFIX.pkg.dev/$PROJECT_ID/$PARENT_DIR/$PROJECT_NAME/$PROJECT_NAME:$COMMIT_SHA'
+  - '${_DOCKER_PATH_PREFIX}.pkg.dev/${_PROJECT_ID}/${_PARENT_DIR}/${_PROJECT_NAME}/${_PROJECT_NAME}:${_COMMIT_SHA}'
