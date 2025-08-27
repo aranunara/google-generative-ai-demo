@@ -91,7 +91,7 @@ func main() {
 	textAIService := external.NewGeminiAIService(genaiClient)
 	tryOnDomainService := domainservices.NewTryOnDomainService(vertexAIService)
 	imagenDomainService := domainservices.NewImagenDomainService(imagenAIService, textAIService)
-	veoDomainService := domainservices.NewVeoDomainService(veoAIService)
+	veoDomainService := domainservices.NewVeoDomainService(veoAIService, textAIService)
 
 	// アプリケーション層を初期化
 	tryOnUseCase := usecases.NewTryOnUseCase(tryOnRepository, tryOnDomainService)
