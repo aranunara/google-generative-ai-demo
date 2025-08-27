@@ -18,15 +18,10 @@ import (
 )
 
 func main() {
-	isCloudBuild := os.Getenv("BUILD_ID") != ""
-	isCloudRun := os.Getenv("K_SERVICE") != ""
-
-	if !isCloudBuild && !isCloudRun && os.Getenv("GEMINI_API_KEY") == "" {
-		// 環境がCloud BuildでもCloud Runでもない場合は、GEMINI_API_KEYが必須
+	geminiApiKey := os.Getenv("GEMINI_API_KEY")
+	if geminiApiKey == "" {
 		log.Fatal("環境変数 GEMINI_API_KEY が未設定です")
 	}
-
-	geminiApiKey := os.Getenv("GEMINI_API_KEY")
 
 	// gcsUri := os.Getenv("GCS_URI")
 	// if gcsUri == "" {
@@ -54,9 +49,6 @@ func main() {
 	log.Printf("[boot] Using VTO_MODEL=%s", vtoModel)
 	log.Printf("[boot] USE_SDK=%v (false=REST API, true=genai.Client)", useSDK)
 
-	// 生成をスキップするかどうか
-	isSkipGenerate := false
-
 	ctx := context.Background()
 
 	// Client Pool Service初期化
@@ -72,7 +64,7 @@ func main() {
 	defer vertexClient.Close()
 
 	// GenAI Client取得 (Imagen/Veo用)
-	genaiClient, err := clientPoolService.GenAIPool().GetGenAIClient(ctx, isCloudBuild, geminiApiKey)
+	genaiClient, err := clientPoolService.GenAIPool().GetGenAIClient(ctx, geminiApiKey)
 	if err != nil {
 		log.Fatalf("Failed to get Gen AI client: %v", err)
 	}
@@ -96,8 +88,9 @@ func main() {
 	tryOnRepository := repositories.NewMemoryTryOnRepository()
 
 	// ドメイン層を初期化
+	textAIService := external.NewGeminiAIService(genaiClient)
 	tryOnDomainService := domainservices.NewTryOnDomainService(vertexAIService)
-	imagenDomainService := domainservices.NewImagenDomainService(imagenAIService)
+	imagenDomainService := domainservices.NewImagenDomainService(imagenAIService, textAIService)
 	veoDomainService := domainservices.NewVeoDomainService(veoAIService)
 
 	// アプリケーション層を初期化
@@ -107,7 +100,7 @@ func main() {
 	parameterService := appservices.NewParameterService()
 
 	// API層を初期化
-	handler := api.NewTryOnHandler(tryOnUseCase, parameterService, isSkipGenerate, location)
+	handler := api.NewTryOnHandler(tryOnUseCase, parameterService, location)
 	imagenHandler := api.NewImagenHandler(imagenUseCase, location)
 	veoHandler := api.NewVeoHandler(veoUseCase, location)
 
@@ -117,15 +110,15 @@ func main() {
 	r.HandleFunc("/tryon", handler.HandleTryOn).Methods("POST")
 	r.HandleFunc("/healthz", handler.HandleHealth).Methods("GET")
 	r.HandleFunc("/api/sample-images", handler.HandleSampleImages).Methods("GET")
+
+	// 静的ファイル配信（CloudRunでも動作するように設定）
+	r.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("static/"))))
 	// Imagen関連のルート
 	r.HandleFunc("/imagen", imagenHandler.HandleImagenIndex).Methods("GET")
 	r.HandleFunc("/imagen", imagenHandler.HandleImagen).Methods("POST")
 	// Veo関連のルート
 	r.HandleFunc("/veo", veoHandler.HandleVeoIndex).Methods("GET")
 	r.HandleFunc("/veo", veoHandler.HandleVeo).Methods("POST")
-
-	// 静的ファイル配信 (サンプル画像用)
-	r.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("static/"))))
 
 	// サーバーを起動
 	port := os.Getenv("PORT")

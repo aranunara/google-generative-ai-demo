@@ -27,7 +27,7 @@ type VertexAIClientPool interface {
 // Imagen/Veo機能で使用する標準GenAI専用クライアントプール
 type GenAIClientPool interface {
 	// 標準GenAI用クライアントを取得
-	GetGenAIClient(ctx context.Context, isCloudBuild bool, geminiApiKey string) (*genai_std.Client, error)
+	GetGenAIClient(ctx context.Context, geminiApiKey string) (*genai_std.Client, error)
 
 	// リソースのクリーンアップ
 	Close() error

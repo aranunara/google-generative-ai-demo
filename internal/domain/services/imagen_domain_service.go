@@ -11,18 +11,35 @@ import (
 
 type ImagenDomainService struct {
 	imageAIService repositories.ImagenAIService
+	textAIService  repositories.TextAIService
 }
 
-func NewImagenDomainService(aiService repositories.ImagenAIService) *ImagenDomainService {
+func NewImagenDomainService(
+	aiService repositories.ImagenAIService,
+	textAIService repositories.TextAIService,
+) *ImagenDomainService {
 	return &ImagenDomainService{
 		imageAIService: aiService,
+		textAIService:  textAIService,
 	}
 }
 
-func (s *ImagenDomainService) ProcessImagen(ctx context.Context, request *entities.ImagenRequest) (*entities.ImagenResult, error) {
+func (s *ImagenDomainService) ProcessImagen(
+	ctx context.Context,
+	request *entities.ImagenRequest,
+) (*entities.ImagenResult, error) {
 	if err := s.validateRequest(request); err != nil {
 		return nil, fmt.Errorf("request validation failed: %w", err)
 	}
+
+	// プロンプトを英語に翻訳
+	textRequest := entities.NewTextRequest(request.Prompt())
+	textResult, err := s.textAIService.TranslateToEnglish(ctx, textRequest)
+	if err != nil {
+		return nil, fmt.Errorf("text generation failed: %w", err)
+	}
+
+	request.SetPrompt(textResult.Text())
 
 	result, err := s.imageAIService.GenerateImage(ctx, request)
 	if err != nil {

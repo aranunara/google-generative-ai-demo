@@ -26,3 +26,11 @@ type ImagenAIService interface {
 
 	Close() error
 }
+
+// Text（テキスト生成）サービス
+type TextAIService interface {
+	GenerateText(ctx context.Context, request *entities.TextRequest) (*entities.TextResult, error)
+
+	// 英語のプロンプトに翻訳
+	TranslateToEnglish(ctx context.Context, request *entities.TextRequest) (*entities.TextResult, error)
+}

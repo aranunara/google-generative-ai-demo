@@ -16,12 +16,11 @@ import (
 	"tryon-demo/internal/application/usecases"
 )
 
-const maxFileSize = 25 * 1024 * 1024 // 25MB
+const maxFileSize = 10 * 1024 * 1024 // 10MB
 
 type TryOnHandler struct {
 	tryOnUseCase     *usecases.TryOnUseCase
 	parameterService *services.ParameterService
-	isSkipGenerate   bool
 	location         string // Vertex AIのリージョン情報
 }
 
@@ -85,13 +84,11 @@ var supportedVeoModels = []VeoModel{
 func NewTryOnHandler(
 	tryOnUseCase *usecases.TryOnUseCase,
 	parameterService *services.ParameterService,
-	isSkipGenerate bool,
 	location string,
 ) *TryOnHandler {
 	return &TryOnHandler{
 		tryOnUseCase:     tryOnUseCase,
 		parameterService: parameterService,
-		isSkipGenerate:   isSkipGenerate,
 		location:         location,
 	}
 }
@@ -220,41 +217,9 @@ func (h *TryOnHandler) getSampleImages(sampleCount int) ([]usecases.ImageOutput,
 }
 
 func (h *TryOnHandler) HandleTryOn(w http.ResponseWriter, r *http.Request) {
-	if h.isSkipGenerate {
-		log.Printf("[DEBUG] Skip generate mode enabled")
-
-		parameters := h.parameterService.ParseFromRequest(r)
-		sampleCount := parameters.SampleCount
-		log.Printf("[DEBUG] Requested sample count: %d", sampleCount)
-
-		images, err := h.getSampleImages(sampleCount)
-		if err != nil {
-			log.Printf("[ERROR] Failed to get sample images: %v", err)
-			h.sendError(w, "サンプル画像の取得に失敗しました", http.StatusInternalServerError)
-			return
-		}
-
-		log.Printf("[DEBUG] Got %d images from getSampleImages", len(images))
-
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Cache-Control", "no-store, max-age=0")
-
-		response := h.createResponse(images)
-		log.Printf("[DEBUG] Created response, encoding JSON...")
-
-		if err := json.NewEncoder(w).Encode(response); err != nil {
-			log.Printf("[ERROR] Failed to encode JSON response: %v", err)
-			h.sendError(w, "レスポンスの生成に失敗しました", http.StatusInternalServerError)
-			return
-		}
-
-		log.Printf("[DEBUG] Successfully sent JSON response")
-		return
-	}
-
 	r.Body = http.MaxBytesReader(w, r.Body, maxFileSize)
 	if err := r.ParseMultipartForm(maxFileSize); err != nil {
-		h.sendError(w, "画像が大きすぎます（25MBまで対応）", http.StatusRequestEntityTooLarge)
+		h.sendError(w, "画像が大きすぎます（10MBまで対応）", http.StatusRequestEntityTooLarge)
 		return
 	}
 
@@ -316,7 +281,7 @@ func (h *TryOnHandler) HandleTryOn(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store, max-age=0")
 
-	response := h.createResponseWithStorageInfo(output.Images, parameters.StorageURI)
+	response := h.createResponse(output.Images)
 
 	log.Printf("[DEBUG] Response: %v", response)
 
@@ -367,24 +332,6 @@ func (h *TryOnHandler) createResponse(imagesOutput []usecases.ImageOutput) map[s
 	return response
 }
 
-func (h *TryOnHandler) createResponseWithStorageInfo(imagesOutput []usecases.ImageOutput, storageURI string) map[string]any {
-	log.Printf("[DEBUG] createResponseWithStorageInfo called with %d images, storageURI: %s", len(imagesOutput), storageURI)
-
-	// Storage URI指定時の処理
-	if storageURI != "" {
-		log.Printf("[INFO] Storage URI specified, creating success response: %s", storageURI)
-		response := map[string]any{
-			"success":    true,
-			"images":     []map[string]string{}, // 空の画像配列
-			"storageUri": storageURI,
-		}
-		return response
-	}
-
-	// Storage URI未指定時は通常の処理
-	return h.createResponse(imagesOutput)
-}
-
 func (h *TryOnHandler) HandleHealth(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("ok"))
@@ -432,28 +379,28 @@ func (h *TryOnHandler) HandleSampleImages(w http.ResponseWriter, r *http.Request
 				ID:          "person_men",
 				Name:        "男性 (一般)",
 				Description: "カジュアルな服装の男性",
-				URL:         "/static/sample_images/person/sample_men.png",
+				URL:         "https://storage.googleapis.com/try-on-generated-central/sample/person/sample_men.png",
 				Category:    "person",
 			},
 			{
 				ID:          "person_men_50",
 				Name:        "男性 (50代)",
 				Description: "フォーマルな服装の中年男性",
-				URL:         "/static/sample_images/person/sample_men_50.png",
+				URL:         "https://storage.googleapis.com/try-on-generated-central/sample/person/sample_men_50.png",
 				Category:    "person",
 			},
 			{
 				ID:          "person_women_20",
 				Name:        "女性 (20代)",
 				Description: "カジュアルな服装の若い女性",
-				URL:         "/static/sample_images/person/sample_women_20.png",
+				URL:         "https://storage.googleapis.com/try-on-generated-central/sample/person/sample_women_20.png",
 				Category:    "person",
 			},
 			{
 				ID:          "person_women_70",
 				Name:        "女性 (70代)",
 				Description: "エレガントな服装のシニア女性",
-				URL:         "/static/sample_images/person/sample_women_70.png",
+				URL:         "https://storage.googleapis.com/try-on-generated-central/sample/person/sample_women_70.png",
 				Category:    "person",
 			},
 		}
@@ -463,42 +410,42 @@ func (h *TryOnHandler) HandleSampleImages(w http.ResponseWriter, r *http.Request
 				ID:          "garment_tops",
 				Name:        "トップス (ベーシック)",
 				Description: "シンプルなデザインのトップス",
-				URL:         "/static/sample_images/garment/sample_tops.png",
+				URL:         "https://storage.googleapis.com/try-on-generated-central/sample/garment/sample_tops.png",
 				Category:    "garment",
 			},
 			{
 				ID:          "garment_tops_hade",
 				Name:        "トップス (派手)",
 				Description: "カラフルで目立つデザインのトップス",
-				URL:         "/static/sample_images/garment/sample_tops_hade.png",
+				URL:         "https://storage.googleapis.com/try-on-generated-central/sample/garment/sample_tops_hade.png",
 				Category:    "garment",
 			},
 			{
 				ID:          "garment_pants",
 				Name:        "パンツ",
 				Description: "カジュアルなパンツ",
-				URL:         "/static/sample_images/garment/sample_pants.png",
+				URL:         "https://storage.googleapis.com/try-on-generated-central/sample/garment/sample_pants.png",
 				Category:    "garment",
 			},
 			{
 				ID:          "garment_shoes",
 				Name:        "シューズ",
 				Description: "スタイリッシュなシューズ",
-				URL:         "/static/sample_images/garment/sample_shoes.png",
+				URL:         "https://storage.googleapis.com/try-on-generated-central/sample/garment/sample_shoes.png",
 				Category:    "garment",
 			},
 			{
 				ID:          "garment_shoes_double",
 				Name:        "シューズ（両足）",
 				Description: "スタイリッシュなシューズ（両足）",
-				URL:         "/static/sample_images/garment/sample_shoes_double.png",
+				URL:         "https://storage.googleapis.com/try-on-generated-central/sample/garment/sample_shoes_double.png",
 				Category:    "garment",
 			},
 			{
 				ID:          "garment_neckless",
 				Name:        "ネックレス",
 				Description: "エレガントなネックレス",
-				URL:         "/static/sample_images/garment/sample_neckless.png",
+				URL:         "https://storage.googleapis.com/try-on-generated-central/sample/garment/sample_neckless.png",
 				Category:    "garment",
 			},
 		}
@@ -520,8 +467,6 @@ func (h *TryOnHandler) HandleSampleImages(w http.ResponseWriter, r *http.Request
 }
 
 func (h *TryOnHandler) HandleIndex(w http.ResponseWriter, r *http.Request) {
-	// 現在のVertex AIリージョン情報をツールチップに含める
-	locationInfo := fmt.Sprintf(" 現在のVertex AIリージョン: %s", h.location)
 
 	html := `<!DOCTYPE html>
 <html lang="ja">
@@ -545,6 +490,24 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-seri
 </head>
 <body class="bg-gray-50 text-gray-800">
 <div class="container mx-auto p-4 md:p-8 max-w-5xl">
+<!-- ナビゲーションバー -->
+<nav class="bg-white shadow-sm rounded-lg mb-6 p-4">
+<div class="flex flex-wrap justify-center gap-3">
+<button onclick="location.href='/'" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium shadow-sm">
+<svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+Virtual Try-On
+</button>
+<button onclick="location.href='/imagen'" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium shadow-sm">
+<svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+Imagen画像生成
+</button>
+<button onclick="location.href='/veo'" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium shadow-sm">
+<svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+Veo動画生成
+</button>
+</div>
+</nav>
+
 <header class="text-center mb-8">
 <h1 class="text-3xl md:text-4xl font-bold text-gray-900">Vertex AI Virtual Try-On</h1>
 <p class="text-gray-600 mt-2">人物と衣服の画像をアップロードして、着せ替えを試そう。</p>
@@ -686,35 +649,30 @@ Compression Quality (JPEG用)
 <input type="number" name="compression_quality" min="0" max="100" value="75" class="w-full px-3 py-2 border border-gray-300 rounded-md" id="compression-quality-input">
 <small class="text-xs text-orange-600 mt-1 hidden" id="compression-warning">※ PNG選択時は圧縮品質は無効になります</small>
 </div>
-<div class="md:col-span-2">
-<label class="block text-sm font-medium mb-1 text-gray-600">
-Storage URI (オプション)
-<div class="tooltip">
-<span class="info-icon">?</span>
-` + fmt.Sprintf(`<span class="tooltiptext">生成画像をGoogle Cloud Storageに保存する場合のバケットパスです。空白の場合は直接レスポンスで返されます。形式例: gs://your-bucket/path/ ※重要：バケットとVertex AIのリージョンを一致させてください（不一致の場合はエラーになります）%s</span>`, locationInfo) + `
-</div>
-</label>
-<input type="text" name="storage_uri" placeholder="gs://your-bucket/path/" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+
 </div>
 </div>
-</div>
-<div class="text-center space-y-3">
-<button type="button" id="toggle-advanced" class="text-sm text-indigo-600 hover:text-indigo-800 mb-2">
+<div class="text-center mb-6">
+<button type="button" id="toggle-advanced" class="text-sm text-indigo-600 hover:text-indigo-800 mb-4">
 詳細設定を表示
 </button>
-<div>
-<div>
+</div>
+
+<!-- 実行ボタン（メイン） -->
+<div class="text-center mb-8">
 <button type="submit" id="submit-btn"
-class="bg-gradient-to-r from-indigo-500 to-blue-600 text-white font-bold py-3 px-8 rounded-full hover:shadow-xl transform hover:-translate-y-0.5 transition-all">
+class="bg-gradient-to-r from-indigo-500 to-blue-600 text-white font-bold py-4 px-12 rounded-full hover:shadow-xl transform hover:-translate-y-0.5 transition-all text-lg">
 着せ替えを実行
 </button>
 </div>
-<div>
+
+<!-- クリアボタン（サブ） -->
+<div class="text-center">
 <button type="button" id="clear-btn"
-class="px-4 py-2 text-sm rounded-full border border-gray-300 text-gray-700 hover:bg-gray-50">
-クリア
+class="px-6 py-2 text-sm rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 hover:border-gray-400 transition-all">
+<svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+全てクリア
 </button>
-</div>
 </div>
 </form>
 <div id="result-section" class="mt-10 hidden">
@@ -747,12 +705,7 @@ class="px-4 py-2 text-sm rounded-full border border-gray-300 text-gray-700 hover
 </div>
 </div>
 
-<footer class="text-center mt-8 text-gray-500 text-sm">
-<div class="space-x-4">
-<a href="/imagen" class="text-indigo-600 hover:text-indigo-800">Imagen画像生成画面</a>
-<a href="/veo" class="text-indigo-600 hover:text-indigo-800">Veo動画生成画面</a>
-</div>
-</footer>
+
 </div>
 <script>
 const form = document.getElementById('tryon-form');
@@ -976,7 +929,7 @@ clearBtn.addEventListener('click', () => {
     document.querySelector('input[name="seed"]').value = '0';
     document.querySelector('select[name="output_mime_type"]').value = 'image/png';
     document.querySelector('input[name="compression_quality"]').value = '75';
-    document.querySelector('input[name="storage_uri"]').value = '';
+
     
     // UI状態も更新
     updateSeedAvailability();
@@ -999,10 +952,10 @@ form.addEventListener('submit', async (event) => {
         return;
     }
 
-    const MAX = 25 * 1024 * 1024;
+    const MAX = 10 * 1024 * 1024;
     // ファイルアップロード使用時のみサイズチェック
     if ((p && p.size > MAX) || (g && g.size > MAX)) {
-        errorMessage.textContent = '画像が大きすぎます（25MBまで対応）';
+        errorMessage.textContent = '画像が大きすぎます（10MBまで対応）';
         errorMessage.classList.remove('hidden');
         return;
     }
@@ -1020,21 +973,7 @@ form.addEventListener('submit', async (event) => {
 
     const formData = new FormData();
     
-    // StorageURIを事前に初期化してフォーム要素から取得
-    let storageUri = '';
     const formElements = document.querySelectorAll('#advanced-settings input, #advanced-settings select');
-    formElements.forEach(element => {
-        if (element.name === 'storage_uri' && element.value) {
-            storageUri = element.value;
-        }
-    });
-    
-    // デバッグ用ログ
-    if (storageUri) {
-        console.log('[DEBUG] StorageURI specified:', storageUri);
-    } else {
-        console.log('[DEBUG] StorageURI not specified, images will be returned in response');
-    }
     
     // サンプル画像を使用する場合の処理
     if (currentPersonSample && !p) {
@@ -1089,21 +1028,9 @@ form.addEventListener('submit', async (event) => {
         
         const contentType = resp.headers.get('content-type');
         if (contentType && contentType.includes('application/json')) {
-            const data = await resp.json();
-            if (data.success) {
-                // Storage URIが指定されている場合の処理
-                if (data.storageUri) {
-                    // Storage URI指定時は保存成功メッセージを表示
-                    resultDisplay.style.display = 'flex';
-                    multipleResults.style.display = 'none';
-                    resultDisplay.innerHTML = '<div class="text-center p-8">' +
-                        '<div class="text-green-600 text-6xl mb-4">✓</div>' +
-                        '<h3 class="text-xl font-semibold text-gray-800 mb-2">画像生成が完了しました</h3>' +
-                        '<p class="text-gray-600 mb-4">生成された画像は以下の場所に保存されました:</p>' +
-                        '<p class="text-blue-600 font-mono bg-blue-50 px-4 py-2 rounded-lg">' + data.storageUri + '</p>' +
-                        '<p class="text-sm text-gray-500 mt-4">Google Cloud Storageで画像を確認してください</p>' +
-                        '</div>';
-                } else if (data.images && data.images.length > 0) {
+                    const data = await resp.json();
+        if (data.success) {
+            if (data.images && data.images.length > 0) {
                     resultDisplay.style.display = 'none';
                     multipleResults.style.display = 'grid';
                     multipleResults.innerHTML = '';
@@ -1166,8 +1093,7 @@ form.addEventListener('submit', async (event) => {
                     multipleResults.appendChild(imgContainer);
                 });
                 } else {
-                    // Storage URIも画像データもない場合
-                    throw new Error('画像の生成または保存に失敗しました');
+                    throw new Error('画像の生成に失敗しました');
                 }
             } else {
                 throw new Error('生成に失敗しました');
@@ -1430,6 +1356,24 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-seri
 </head>
 <body class="bg-gray-50 text-gray-800">
 <div class="container mx-auto p-4 md:p-8 max-w-4xl">
+<!-- ナビゲーションバー -->
+<nav class="bg-white shadow-sm rounded-lg mb-6 p-4">
+<div class="flex flex-wrap justify-center gap-3">
+<button onclick="location.href='/'" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium shadow-sm">
+<svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+Virtual Try-On
+</button>
+<button onclick="location.href='/imagen'" class="px-4 py-2 bg-green-700 text-white rounded-lg shadow-md font-medium ring-2 ring-green-300">
+<svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+Imagen画像生成
+</button>
+<button onclick="location.href='/veo'" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium shadow-sm">
+<svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+Veo動画生成
+</button>
+</div>
+</nav>
+
 <header class="text-center mb-8">
 <h1 class="text-3xl md:text-4xl font-bold text-gray-900">Vertex AI Imagen</h1>
 <p class="text-gray-600 mt-2">テキストプロンプトから画像を生成します</p>
@@ -1526,15 +1470,26 @@ AI安全性チェック結果を含める
 </div>
 </div>
 </div>
-<div class="text-center space-y-3">
-<button type="button" id="toggle-imagen-advanced" class="text-sm text-indigo-600 hover:text-indigo-800 mb-2">
+<div class="text-center mb-6">
+<button type="button" id="toggle-imagen-advanced" class="text-sm text-indigo-600 hover:text-indigo-800 mb-4">
 詳細設定を表示
 </button>
-<div>
-<div class="text-center">
+</div>
+
+<!-- 実行ボタン（メイン） -->
+<div class="text-center mb-8">
 <button type="submit" id="submit-btn"
-class="bg-gradient-to-r from-indigo-500 to-blue-600 text-white font-bold py-3 px-8 rounded-full hover:shadow-xl transform hover:-translate-y-0.5 transition-all">
+class="bg-gradient-to-r from-indigo-500 to-blue-600 text-white font-bold py-4 px-12 rounded-full hover:shadow-xl transform hover:-translate-y-0.5 transition-all text-lg">
 画像を生成
+</button>
+</div>
+
+<!-- クリアボタン（サブ） -->
+<div class="text-center">
+<button type="button" id="clear-imagen-btn"
+class="px-6 py-2 text-sm rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 hover:border-gray-400 transition-all">
+<svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+プロンプトクリア
 </button>
 </div>
 </form>
@@ -1545,12 +1500,7 @@ class="bg-gradient-to-r from-indigo-500 to-blue-600 text-white font-bold py-3 px
 </div>
 <div id="error-message" class="mt-6 hidden bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg"></div>
 </main>
-<footer class="text-center mt-8 text-gray-500 text-sm">
-<div class="space-x-4">
-<a href="/" class="text-indigo-600 hover:text-indigo-800">Virtual Try-On画面</a>
-<a href="/veo" class="text-indigo-600 hover:text-indigo-800">Veo動画生成画面</a>
-</div>
-</footer>
+
 </div>
 <script>
 const form = document.getElementById('imagen-form');
@@ -1561,6 +1511,7 @@ const resultDisplay = document.getElementById('result-display');
 const multipleResults = document.getElementById('multiple-results');
 const errorMessage = document.getElementById('error-message');
 const submitBtn = document.getElementById('submit-btn');
+const clearImagenBtn = document.getElementById('clear-imagen-btn');
 const toggleAdvancedBtn = document.getElementById('toggle-imagen-advanced');
 const advancedSettings = document.getElementById('imagen-advanced-settings');
 
@@ -1572,6 +1523,26 @@ toggleAdvancedBtn.addEventListener('click', () => {
     } else {
         advancedSettings.style.display = 'none';
         toggleAdvancedBtn.textContent = '詳細設定を表示';
+    }
+});
+
+// クリアボタン
+clearImagenBtn.addEventListener('click', () => {
+    if (confirm('プロンプトと設定をクリアしますか？')) {
+        promptInput.value = '';
+        imagenModelSelect.selectedIndex = 0;
+        resultDisplay.innerHTML = '';
+        resultSection.classList.add('hidden');
+        errorMessage.classList.add('hidden');
+        multipleResults.innerHTML = '';
+        multipleResults.style.display = 'none';
+        
+        // 詳細設定もリセット
+        document.querySelector('input[name="numberOfImages"]').value = '1';
+        document.querySelector('select[name="aspectRatio"]').selectedIndex = 0;
+        document.querySelector('input[name="negativePrompt"]').value = '';
+        document.querySelector('input[name="seed"]').value = '0';
+        document.querySelector('input[name="includeRaiReason"]').checked = false;
     }
 });
 

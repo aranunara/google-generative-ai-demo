@@ -40,7 +40,6 @@ type TryOnParametersInput struct {
 	SafetySetting      string
 	SampleCount        int
 	Seed               int
-	StorageURI         string
 	OutputMimeType     string
 	CompressionQuality int
 }
@@ -120,7 +119,7 @@ func (uc *TryOnUseCase) convertParameters(input *TryOnParametersInput) (*valueob
 		safetySetting,
 		input.SampleCount,
 		input.Seed,
-		input.StorageURI,
+		"", // Storage URI is removed
 		mimeType,
 		input.CompressionQuality,
 	)

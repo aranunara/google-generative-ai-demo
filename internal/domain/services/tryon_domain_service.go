@@ -36,8 +36,7 @@ func (s *TryOnDomainService) ProcessTryOn(ctx context.Context, request *entities
 		return nil, fmt.Errorf("try-on generation failed: %w", err)
 	}
 
-	// Storage URI指定時は画像が空でも成功とする
-	if !result.HasImages() && request.Parameters().StorageURI() == "" {
+	if !result.HasImages() {
 		return nil, fmt.Errorf("no images generated")
 	}
 

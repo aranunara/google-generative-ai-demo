@@ -21,7 +21,6 @@ func (s *ParameterService) ParseFromRequest(r *http.Request) *usecases.TryOnPara
 		SafetySetting:      s.getString(r, "safety_setting", "block_medium_and_above"),
 		SampleCount:        s.getInt(r, "sample_count", 1, 1, 4),
 		Seed:               s.getInt(r, "seed", 0, 0, 0),
-		StorageURI:         s.getString(r, "storage_uri", ""),
 		OutputMimeType:     s.getString(r, "output_mime_type", "image/png"),
 		CompressionQuality: s.getInt(r, "compression_quality", 75, 0, 100),
 	}

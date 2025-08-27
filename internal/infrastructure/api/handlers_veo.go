@@ -20,7 +20,7 @@ func (h *VeoHandler) HandleVeo(w http.ResponseWriter, r *http.Request) {
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxFileSize)
 	if err := r.ParseMultipartForm(maxFileSize); err != nil {
-		h.sendError(w, "画像が大きすぎます（25MBまで対応）", http.StatusRequestEntityTooLarge)
+		h.sendError(w, "画像が大きすぎます（10MBまで対応）", http.StatusRequestEntityTooLarge)
 		return
 	}
 
@@ -31,6 +31,13 @@ func (h *VeoHandler) HandleVeo(w http.ResponseWriter, r *http.Request) {
 	videoPrompt := r.FormValue("videoPrompt")
 	if videoPrompt == "" {
 		h.sendError(w, "動画プロンプトを入力してください", http.StatusBadRequest)
+		return
+	}
+
+	veoModel := h.getDefaultVeoModel() // サーバー側で固定
+	isValidVeoModel := h.isValidVeoModel(veoModel)
+	if !isValidVeoModel {
+		h.sendError(w, "無効なモデルです", http.StatusBadRequest)
 		return
 	}
 
@@ -64,7 +71,7 @@ func (h *VeoHandler) HandleVeo(w http.ResponseWriter, r *http.Request) {
 		ImageData:     imageData,
 		ImageMimeType: imageMimeType,
 		VideoPrompt:   videoPrompt,
-		VideoModel:    h.getDefaultVeoModel(), // サーバー側で固定
+		VideoModel:    veoModel,
 	}
 
 	output, err := h.veoUseCase.Execute(r.Context(), input)
@@ -166,6 +173,24 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-seri
 </head>
 <body class="bg-gray-50 text-gray-800">
 <div class="container mx-auto p-4 md:p-8 max-w-4xl">
+<!-- ナビゲーションバー -->
+<nav class="bg-white shadow-sm rounded-lg mb-6 p-4">
+<div class="flex flex-wrap justify-center gap-3">
+<button onclick="location.href='/'" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium shadow-sm">
+<svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+Virtual Try-On
+</button>
+<button onclick="location.href='/imagen'" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium shadow-sm">
+<svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+Imagen画像生成
+</button>
+<button onclick="location.href='/veo'" class="px-4 py-2 bg-purple-700 text-white rounded-lg shadow-md font-medium ring-2 ring-purple-300">
+<svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+Veo動画生成
+</button>
+</div>
+</nav>
+
 <header class="text-center mb-8">
 <h1 class="text-3xl md:text-4xl font-bold text-gray-900">Vertex AI Veo</h1>
 <p class="text-gray-600 mt-2">画像から動画を生成します</p>
@@ -236,19 +261,21 @@ class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:rin
 placeholder="例: A person walking through a beautiful garden with flowers blooming in slow motion"></textarea>
 </div>
 </div>
-<div class="text-center space-y-3">
-<div class="text-center">
+<!-- 実行ボタン（メイン） -->
+<div class="text-center mb-8">
 <button type="submit" id="submit-btn"
-class="bg-gradient-to-r from-indigo-500 to-blue-600 text-white font-bold py-3 px-8 rounded-full hover:shadow-xl transform hover:-translate-y-0.5 transition-all">
+class="bg-gradient-to-r from-indigo-500 to-blue-600 text-white font-bold py-4 px-12 rounded-full hover:shadow-xl transform hover:-translate-y-0.5 transition-all text-lg">
 動画を生成
 </button>
 </div>
-<div>
+
+<!-- クリアボタン（サブ） -->
+<div class="text-center">
 <button type="button" id="clear-btn"
-class="px-4 py-2 text-sm rounded-full border border-gray-300 text-gray-700 hover:bg-gray-50">
-クリア
+class="px-6 py-2 text-sm rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 hover:border-gray-400 transition-all">
+<svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+全てクリア
 </button>
-</div>
 </div>
 </form>
 <div id="result-section" class="mt-10 hidden">
@@ -257,12 +284,7 @@ class="px-4 py-2 text-sm rounded-full border border-gray-300 text-gray-700 hover
 </div>
 <div id="error-message" class="mt-6 hidden bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg"></div>
 </main>
-<footer class="text-center mt-8 text-gray-500 text-sm">
-<div class="space-x-4">
-<a href="/" class="text-indigo-600 hover:text-indigo-800">Virtual Try-On画面</a>
-<a href="/imagen" class="text-indigo-600 hover:text-indigo-800">Imagen画像生成画面</a>
-</div>
-</footer>
+
 </div>
 <script>
 const form = document.getElementById('veo-form');
@@ -328,18 +350,20 @@ toggleImageInputMethod();
 
 // クリアボタン
 clearBtn.addEventListener('click', () => {
-    videoPromptInput.value = '';
-    imagenPromptInput.value = '';
-    imageInput.value = '';
-    imageName.textContent = '';
-    imagePreview.innerHTML = '<span class="text-gray-500">画像プレビュー</span>';
-    resultDisplay.innerHTML = '';
-    resultSection.classList.add('hidden');
-    errorMessage.classList.add('hidden');
-    
-    // チェックボックスもリセット
-    useImageGenerationCheckbox.checked = false;
-    toggleImageInputMethod();
+    if (confirm('全ての入力内容をクリアしますか？')) {
+        videoPromptInput.value = '';
+        imagenPromptInput.value = '';
+        imageInput.value = '';
+        imageName.textContent = '';
+        imagePreview.innerHTML = '<span class="text-gray-500">画像プレビュー</span>';
+        resultDisplay.innerHTML = '';
+        resultSection.classList.add('hidden');
+        errorMessage.classList.add('hidden');
+        
+        // チェックボックスもリセット
+        useImageGenerationCheckbox.checked = false;
+        toggleImageInputMethod();
+    }
 });
 
 // フォーム送信
@@ -373,9 +397,9 @@ form.addEventListener('submit', async (event) => {
         }
     }
 
-    const MAX = 25 * 1024 * 1024;
+    const MAX = 10 * 1024 * 1024;
     if (imageFile && imageFile.size > MAX) {
-        errorMessage.textContent = '画像が大きすぎます（25MBまで対応）';
+        errorMessage.textContent = '画像が大きすぎます（10MBまで対応）';
         errorMessage.classList.remove('hidden');
         return;
     }

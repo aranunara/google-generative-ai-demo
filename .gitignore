@@ -55,3 +55,8 @@ cmd/base64/images/*
 cmd/base64/encoded/*
 config.yaml
 veo3_with_image_input.mp4
+
+slides/*
+node_modules
+package-lock.json
+package.json

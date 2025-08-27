@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"time"
 
@@ -128,11 +127,6 @@ func (s *VertexAIService) generateWithREST(ctx context.Context, request *entitie
 		"outputOptions":    outputOptions,
 	}
 
-	// Storage URIが空でない場合のみ追加
-	if params.StorageURI() != "" {
-		parameters["storageUri"] = params.StorageURI()
-	}
-
 	// Watermarkが無効かつSeedが0より大きい場合のみSeedを追加
 	if !params.AddWatermark() && params.Seed() > 0 {
 		parameters["seed"] = params.Seed()
@@ -210,14 +204,6 @@ func (s *VertexAIService) generateWithREST(ctx context.Context, request *entitie
 
 	if len(predResp.Predictions) == 0 {
 		return nil, fmt.Errorf("no predictions in response")
-	}
-
-	// Storage URIが指定されている場合の処理
-	if params.StorageURI() != "" {
-		// Storage URI指定時は200レスポンスが返ってきた時点で成功
-		// 空のImageDataリストでTryOnResultを作成（フロントエンド側で保存成功を表示）
-		log.Printf("[INFO] Images saved to Storage URI: %s", params.StorageURI())
-		return entities.NewTryOnResult(request.ID(), []*valueobjects.ImageData{}), nil
 	}
 
 	// 通常の画像データ処理（Storage URI未指定時）

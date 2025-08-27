@@ -38,6 +38,10 @@ func (r *ImagenRequest) Prompt() string {
 	return r.prompt
 }
 
+func (r *ImagenRequest) SetPrompt(prompt string) {
+	r.prompt = prompt
+}
+
 func (r *ImagenRequest) ImagenModel() string {
 	return r.imagenModel
 }

@@ -32,6 +32,10 @@ func (r *VeoRequest) VideoPrompt() string {
 	return r.videoPrompt
 }
 
+func (r *VeoRequest) SetVideoPrompt(videoPrompt string) {
+	r.videoPrompt = videoPrompt
+}
+
 func (r *VeoRequest) VeoModel() string {
 	return r.veoModel
 }

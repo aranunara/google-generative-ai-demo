@@ -10,12 +10,14 @@ import (
 )
 
 type VeoDomainService struct {
-	veoAIService repositories.VeoAIService
+	veoAIService  repositories.VeoAIService
+	textAIService repositories.TextAIService
 }
 
-func NewVeoDomainService(veoAIService repositories.VeoAIService) *VeoDomainService {
+func NewVeoDomainService(veoAIService repositories.VeoAIService, textAIService repositories.TextAIService) *VeoDomainService {
 	return &VeoDomainService{
-		veoAIService: veoAIService,
+		veoAIService:  veoAIService,
+		textAIService: textAIService,
 	}
 }
 
@@ -25,6 +27,16 @@ func (s *VeoDomainService) ProcessVeo(
 ) (*entities.VeoResult, error) {
 	if err := s.validateRequest(request); err != nil {
 		return nil, fmt.Errorf("request validation failed: %w", err)
+	}
+
+	if request.VideoPrompt() != "" {
+		textRequest := entities.NewTextRequest(request.VideoPrompt())
+		textResult, err := s.textAIService.TranslateToEnglish(ctx, textRequest)
+		if err != nil {
+			return nil, fmt.Errorf("text generation failed: %w", err)
+		}
+
+		request.SetVideoPrompt(textResult.Text())
 	}
 
 	result, err := s.veoAIService.GenerateVideo(ctx, request)

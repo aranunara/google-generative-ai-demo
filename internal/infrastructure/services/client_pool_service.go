@@ -81,7 +81,6 @@ func newGenAIClientPool(config *repositories.AIClientConfig) repositories.GenAIC
 
 func (p *genAIClientPool) GetGenAIClient(
 	ctx context.Context,
-	isCloudBuild bool,
 	geminiApiKey string,
 ) (*genai_std.Client, error) {
 	p.mutex.RLock()
@@ -100,23 +99,14 @@ func (p *genAIClientPool) GetGenAIClient(
 	}
 
 	// 標準GenAI クライアントを作成
-	if isCloudBuild {
-		client, err := genai_std.NewClient(ctx, &genai_std.ClientConfig{
-			APIKey: geminiApiKey,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to create GenAI client: %w", err)
-		}
-
-		p.client = client
-	} else {
-		client, err := genai_std.NewClient(ctx, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create GenAI client: %w", err)
-		}
-
-		p.client = client
+	client, err := genai_std.NewClient(ctx, &genai_std.ClientConfig{
+		APIKey: geminiApiKey,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create GenAI client: %w", err)
 	}
+
+	p.client = client
 
 	return p.client, nil
 }
