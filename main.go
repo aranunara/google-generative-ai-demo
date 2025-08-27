@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
@@ -13,9 +14,23 @@ import (
 	"tryon-demo/internal/infrastructure/api"
 	"tryon-demo/internal/infrastructure/external"
 	"tryon-demo/internal/infrastructure/repositories"
+	"tryon-demo/internal/infrastructure/services"
 )
 
 func main() {
+	isCloudBuild := os.Getenv("BUILD_ID") != ""
+
+	if !isCloudBuild && os.Getenv("GEMINI_API_KEY") == "" {
+		log.Fatal("環境変数 GEMINI_API_KEY が未設定です")
+	}
+
+	geminiApiKey := os.Getenv("GEMINI_API_KEY")
+
+	// gcsUri := os.Getenv("GCS_URI")
+	// if gcsUri == "" {
+	// 	log.Fatal("環境変数 GCS_URI が未設定です")
+	// }
+
 	// 環境変数から設定を取得
 	projectID := os.Getenv("PROJECT_ID")
 	if projectID == "" {
@@ -40,24 +55,59 @@ func main() {
 	// 生成をスキップするかどうか
 	isSkipGenerate := false
 
-	// インフラ層を初期化
-	vertexAIService, err := external.NewVertexAIService(projectID, location, vtoModel, useSDK)
+	ctx := context.Background()
+
+	// Client Pool Service初期化
+	clientPoolService := services.NewClientPoolService(projectID, location)
+	defer clientPoolService.Close()
+
+	// VertexAI Client取得 (TryOn用)
+	vertexClient, err := clientPoolService.VertexAIPool().GetVertexAIClient(ctx)
 	if err != nil {
-		log.Fatalf("Failed to create Vertex AI service: %v", err)
+		log.Fatalf("Failed to get Vertex AI client: %v", err)
 	}
+
+	defer vertexClient.Close()
+
+	// GenAI Client取得 (Imagen/Veo用)
+	genaiClient, err := clientPoolService.GenAIPool().GetGenAIClient(ctx, isCloudBuild, geminiApiKey)
+	if err != nil {
+		log.Fatalf("Failed to get Gen AI client: %v", err)
+	}
+
+	// インフラ層を初期化
+
+	// VertexAI Service初期化
+	vertexAIService := external.NewVertexAIService(
+		projectID, location, vtoModel, useSDK, vertexClient,
+	)
 	defer vertexAIService.Close()
 
+	// Imagen AI Service初期化
+	imagenAIService := external.NewImagenAIService(genaiClient)
+	defer imagenAIService.Close()
+
+	// Veo AI Service初期化
+	veoAIService := external.NewVeoAIService(genaiClient)
+
+	// リポジトリ層を初期化
 	tryOnRepository := repositories.NewMemoryTryOnRepository()
 
 	// ドメイン層を初期化
 	tryOnDomainService := domainservices.NewTryOnDomainService(vertexAIService)
+	imagenDomainService := domainservices.NewImagenDomainService(imagenAIService)
+	veoDomainService := domainservices.NewVeoDomainService(veoAIService)
 
 	// アプリケーション層を初期化
 	tryOnUseCase := usecases.NewTryOnUseCase(tryOnRepository, tryOnDomainService)
+	imagenUseCase := usecases.NewImagenUseCase(imagenDomainService)
+	veoUseCase := usecases.NewVeoUseCase(veoDomainService, imagenDomainService)
 	parameterService := appservices.NewParameterService()
 
 	// API層を初期化
 	handler := api.NewTryOnHandler(tryOnUseCase, parameterService, isSkipGenerate, location)
+	imagenHandler := api.NewImagenHandler(imagenUseCase, location)
+	veoHandler := api.NewVeoHandler(veoUseCase, location)
 
 	// ルートを設定
 	r := mux.NewRouter()
@@ -65,6 +115,12 @@ func main() {
 	r.HandleFunc("/tryon", handler.HandleTryOn).Methods("POST")
 	r.HandleFunc("/healthz", handler.HandleHealth).Methods("GET")
 	r.HandleFunc("/api/sample-images", handler.HandleSampleImages).Methods("GET")
+	// Imagen関連のルート
+	r.HandleFunc("/imagen", imagenHandler.HandleImagenIndex).Methods("GET")
+	r.HandleFunc("/imagen", imagenHandler.HandleImagen).Methods("POST")
+	// Veo関連のルート
+	r.HandleFunc("/veo", veoHandler.HandleVeoIndex).Methods("GET")
+	r.HandleFunc("/veo", veoHandler.HandleVeo).Methods("POST")
 
 	// 静的ファイル配信 (サンプル画像用)
 	r.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("static/"))))

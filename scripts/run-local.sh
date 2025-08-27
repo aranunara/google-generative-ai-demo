@@ -109,8 +109,19 @@ show_current_settings() {
     if [ -f "config.yaml" ]; then
         config_location=$(yq '.location' config.yaml 2>/dev/null || echo "未設定")
         config_vto_model=$(yq '.vto_model' config.yaml 2>/dev/null || echo "未設定")
+        config_gcs_uri=$(yq '.gcs_uri' config.yaml 2>/dev/null || echo "未設定")
+        config_api_key=$(yq '.api_key' config.yaml 2>/dev/null || echo "未設定")
         echo "🌍 リージョン: $config_location (config.yamlから)"
         echo "🤖 VTOモデル: $config_vto_model (config.yamlから)"
+        echo "💾 GCS保存先URI: $config_gcs_uri (config.yamlから)"
+        # APIキーは表示しない、未設定の場合は背停を促して終了する
+        if [ -z "$config_api_key" ]; then
+            echo "🔑 APIキー: ❌ 未設定"
+            echo "🔑 APIキーを設定してください。"
+            exit 1
+        else
+            echo "🔑 APIキー: ✅ 設定済み"
+        fi
     fi
     echo "═══════════════════════════════════════════"
 }
@@ -300,19 +311,31 @@ fi
 echo "🔐 config.yamlを読み込み"
 LOCATION=$(yq '.location' config.yaml 2>/dev/null || echo "us-central1")
 VTO_MODEL=${VTO_MODEL:-$(yq '.vto_model' config.yaml 2>/dev/null || echo "default")}
-
+GEMINI_API_KEY=$(yq '.api_key' config.yaml 2>/dev/null || echo "default")
+GCS_URI=$(yq '.gcs_uri' config.yaml 2>/dev/null || echo "default")
 echo ""
 echo "🚀 アプリケーションを起動します..."
 echo "🔐 設定された環境変数:"
 echo "  - PROJECT_ID: $PROJECT_ID (Google Cloud認証から取得)"
 echo "  - LOCATION: $LOCATION"
 echo "  - VTO_MODEL: $VTO_MODEL"
+echo "  - GCS_URI: $GCS_URI"
+# APIキーは表示しない、未設定の場合は背停を促して終了する
+if [ -z "$GEMINI_API_KEY" ]; then
+    echo "🔑 APIキー: ❌ 未設定"
+    echo "🔑 APIキーを設定してください。"
+    exit 1
+else
+    echo "🔑 APIキー: ✅ 設定済み"
+fi
 
 # 一時的な.envファイルを作成（確実に環境変数を渡すため）
 cat > .env.local <<EOF
 PROJECT_ID=$PROJECT_ID
 LOCATION=$LOCATION
 VTO_MODEL=$VTO_MODEL
+GEMINI_API_KEY=$GEMINI_API_KEY
+GCS_URI=$GCS_URI
 EOF
 
 # OS別のdocker-compose設定を生成

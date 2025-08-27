@@ -22,10 +22,14 @@ func (m *mockAIService) GenerateTryOn(ctx context.Context, request *entities.Try
 	return m.result, m.err
 }
 
+func (m *mockAIService) Close() error {
+	return nil
+}
+
 func TestTryOnDomainService_ProcessTryOn(t *testing.T) {
 	personImage := createTestImageData(t)
 	garmentImage := createTestImageData(t)
-	
+
 	validRequest, err := entities.NewTryOnRequest(personImage, garmentImage, nil)
 	if err != nil {
 		t.Fatalf("Failed to create valid request: %v", err)
@@ -36,10 +40,10 @@ func TestTryOnDomainService_ProcessTryOn(t *testing.T) {
 			result: entities.NewTryOnResult(validRequest.ID(), []*valueobjects.ImageData{personImage}),
 			err:    nil,
 		}
-		
+
 		service := NewTryOnDomainService(mockAI)
 		result, err := service.ProcessTryOn(context.Background(), validRequest)
-		
+
 		if err != nil {
 			t.Errorf("ProcessTryOn() error = %v", err)
 		}
@@ -56,10 +60,10 @@ func TestTryOnDomainService_ProcessTryOn(t *testing.T) {
 			result: nil,
 			err:    errors.New("AI service failed"),
 		}
-		
+
 		service := NewTryOnDomainService(mockAI)
 		result, err := service.ProcessTryOn(context.Background(), validRequest)
-		
+
 		if err == nil {
 			t.Errorf("Expected error, got nil")
 		}
@@ -73,17 +77,17 @@ func TestTryOnDomainService_ProcessTryOn(t *testing.T) {
 			result: nil,
 			err:    errors.New("quota exceeded"),
 		}
-		
+
 		service := NewTryOnDomainService(mockAI)
 		result, err := service.ProcessTryOn(context.Background(), validRequest)
-		
+
 		if err == nil {
 			t.Errorf("Expected error, got nil")
 		}
 		if result != nil {
 			t.Errorf("Expected nil result on error")
 		}
-		
+
 		if !strings.Contains(err.Error(), "service temporarily unavailable due to high demand") {
 			t.Errorf("Expected quota error message, got %v", err.Error())
 		}
@@ -94,10 +98,10 @@ func TestTryOnDomainService_ProcessTryOn(t *testing.T) {
 			result: entities.NewTryOnResult(validRequest.ID(), []*valueobjects.ImageData{}),
 			err:    nil,
 		}
-		
+
 		service := NewTryOnDomainService(mockAI)
 		result, err := service.ProcessTryOn(context.Background(), validRequest)
-		
+
 		if err == nil {
 			t.Errorf("Expected error for no images")
 		}
@@ -110,19 +114,18 @@ func TestTryOnDomainService_ProcessTryOn(t *testing.T) {
 func createTestImageData(t *testing.T) *valueobjects.ImageData {
 	// Create minimal valid JPEG bytes
 	jpegBytes := []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0xFF, 0xD9}
-	
-	imageData, err := valueobjects.NewImageData(jpegBytes)
+
+	imageData, err := valueobjects.NewImageData(jpegBytes, "image/jpeg")
 	if err != nil {
 		// If that fails, create a simple test image
 		img := image.NewRGBA(image.Rect(0, 0, 1, 1))
 		var buf bytes.Buffer
 		jpeg.Encode(&buf, img, &jpeg.Options{Quality: 90})
-		imageData, err = valueobjects.NewImageData(buf.Bytes())
+		imageData, err = valueobjects.NewImageData(buf.Bytes(), "image/jpeg")
 		if err != nil {
 			t.Fatalf("Failed to create test image data: %v", err)
 		}
 	}
-	
+
 	return imageData
 }
-

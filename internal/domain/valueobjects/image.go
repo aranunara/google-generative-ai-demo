@@ -22,11 +22,12 @@ const (
 )
 
 type ImageData struct {
-	data   []byte
-	format ImageFormat
+	data     []byte
+	format   ImageFormat
+	mimeType string
 }
 
-func NewImageData(data []byte) (*ImageData, error) {
+func NewImageData(data []byte, mimeType string) (*ImageData, error) {
 	if len(data) == 0 {
 		return nil, fmt.Errorf("image data cannot be empty")
 	}
@@ -37,9 +38,14 @@ func NewImageData(data []byte) (*ImageData, error) {
 	}
 
 	return &ImageData{
-		data:   data,
-		format: format,
+		data:     data,
+		format:   format,
+		mimeType: mimeType,
 	}, nil
+}
+
+func (i *ImageData) MimeType() string {
+	return i.mimeType
 }
 
 func (i *ImageData) Data() []byte {

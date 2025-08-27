@@ -32,7 +32,7 @@ func TestNewImageData(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := NewImageData(tt.data)
+			_, err := NewImageData(tt.data, "image/jpeg")
 			if (err != nil) != tt.wantErr {
 				t.Errorf("NewImageData() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -49,7 +49,7 @@ func TestImageData_ToJPEG(t *testing.T) {
 		t.Fatalf("Failed to create test JPEG: %v", err)
 	}
 
-	imageData, err := NewImageData(buf.Bytes())
+	imageData, err := NewImageData(buf.Bytes(), "image/jpeg")
 	if err != nil {
 		t.Fatalf("Failed to create ImageData: %v", err)
 	}

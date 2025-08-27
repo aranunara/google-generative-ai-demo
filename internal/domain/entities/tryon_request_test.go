@@ -16,12 +16,12 @@ func createTestImageData(t *testing.T) *valueobjects.ImageData {
 	if err != nil {
 		t.Fatalf("Failed to create test image: %v", err)
 	}
-	
-	imageData, err := valueobjects.NewImageData(buf.Bytes())
+
+	imageData, err := valueobjects.NewImageData(buf.Bytes(), "image/jpeg")
 	if err != nil {
 		t.Fatalf("Failed to create ImageData: %v", err)
 	}
-	
+
 	return imageData
 }
 
@@ -74,7 +74,7 @@ func TestNewTryOnRequest(t *testing.T) {
 				t.Errorf("NewTryOnRequest() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			
+
 			if !tt.wantErr {
 				if request.ID() == "" {
 					t.Errorf("Expected non-empty ID")
@@ -96,21 +96,21 @@ func TestNewTryOnRequest(t *testing.T) {
 func TestTryOnRequest_PrepareImages(t *testing.T) {
 	personImage := createTestImageData(t)
 	garmentImage := createTestImageData(t)
-	
+
 	request, err := NewTryOnRequest(personImage, garmentImage, nil)
 	if err != nil {
 		t.Fatalf("Failed to create request: %v", err)
 	}
-	
+
 	err = request.PrepareImages()
 	if err != nil {
 		t.Errorf("PrepareImages() error = %v", err)
 	}
-	
+
 	if !request.PersonImage().IsJPEG() {
 		t.Errorf("Person image should be JPEG after preparation")
 	}
-	
+
 	if !request.GarmentImage().IsJPEG() {
 		t.Errorf("Garment image should be JPEG after preparation")
 	}

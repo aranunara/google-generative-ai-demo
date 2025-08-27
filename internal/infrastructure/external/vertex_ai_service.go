@@ -13,40 +13,33 @@ import (
 
 	"cloud.google.com/go/vertexai/genai"
 	"golang.org/x/oauth2/google"
-	"google.golang.org/api/option"
 
 	"tryon-demo/internal/domain/entities"
+	"tryon-demo/internal/domain/repositories"
 	"tryon-demo/internal/domain/valueobjects"
 	"tryon-demo/model"
 )
 
 type VertexAIService struct {
-	projectID string
-	location  string
-	vtoModel  string
-	client    *genai.Client
-	useSDK    bool
+	projectID      string
+	location       string
+	vtoModel       string
+	vertexAIClient *genai.Client
+	useSDK         bool
 }
 
-func NewVertexAIService(projectID, location, vtoModel string, useSDK bool) (*VertexAIService, error) {
-	var client *genai.Client
-	if useSDK {
-		ctx := context.Background()
-		endpoint := fmt.Sprintf("%s-aiplatform.googleapis.com:443", location)
-		var err error
-		client, err = genai.NewClient(ctx, projectID, location, option.WithEndpoint(endpoint))
-		if err != nil {
-			return nil, fmt.Errorf("failed to create genai client: %w", err)
-		}
-	}
-
+func NewVertexAIService(
+	projectID, location, vtoModel string,
+	useSDK bool,
+	vertexAIClient *genai.Client,
+) repositories.VertexAIService {
 	return &VertexAIService{
-		projectID: projectID,
-		location:  location,
-		vtoModel:  vtoModel,
-		client:    client,
-		useSDK:    useSDK,
-	}, nil
+		projectID:      projectID,
+		location:       location,
+		vtoModel:       vtoModel,
+		vertexAIClient: vertexAIClient,
+		useSDK:         useSDK,
+	}
 }
 
 func (s *VertexAIService) GenerateTryOn(ctx context.Context, request *entities.TryOnRequest) (*entities.TryOnResult, error) {
@@ -57,7 +50,7 @@ func (s *VertexAIService) GenerateTryOn(ctx context.Context, request *entities.T
 }
 
 func (s *VertexAIService) generateWithSDK(ctx context.Context, request *entities.TryOnRequest) (*entities.TryOnResult, error) {
-	model := s.client.GenerativeModel(s.vtoModel)
+	model := s.vertexAIClient.GenerativeModel(s.vtoModel)
 
 	personPart := genai.ImageData("image/jpeg", request.PersonImage().Data())
 	garmentPart := genai.ImageData("image/jpeg", request.GarmentImage().Data())
@@ -92,7 +85,7 @@ func (s *VertexAIService) generateWithSDK(ctx context.Context, request *entities
 	for _, part := range candidate.Content.Parts {
 		if blob, ok := part.(genai.Blob); ok {
 			if blob.MIMEType == "image/jpeg" || blob.MIMEType == "image/png" {
-				imageData, err := valueobjects.NewImageData(blob.Data)
+				imageData, err := valueobjects.NewImageData(blob.Data, blob.MIMEType)
 				if err != nil {
 					return nil, fmt.Errorf("failed to create image data: %w", err)
 				}
@@ -240,7 +233,7 @@ func (s *VertexAIService) generateWithREST(ctx context.Context, request *entitie
 			continue
 		}
 
-		imageData, err := valueobjects.NewImageData(imageBytes)
+		imageData, err := valueobjects.NewImageData(imageBytes, prediction.MimeType)
 		if err != nil {
 			continue
 		}
@@ -281,8 +274,8 @@ func (s *VertexAIService) parseResponse(data []byte) (*model.VirtualTryOnRespons
 }
 
 func (s *VertexAIService) Close() error {
-	if s.client != nil {
-		return s.client.Close()
+	if s.vertexAIClient != nil {
+		return s.vertexAIClient.Close()
 	}
 	return nil
 }

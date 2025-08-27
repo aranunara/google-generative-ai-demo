@@ -11,8 +11,8 @@ import (
 )
 
 type TryOnUseCase struct {
-	tryOnRepo      repositories.TryOnRepository
-	domainService  *services.TryOnDomainService
+	tryOnRepo     repositories.TryOnRepository
+	domainService *services.TryOnDomainService
 }
 
 func NewTryOnUseCase(
@@ -27,7 +27,9 @@ func NewTryOnUseCase(
 
 type TryOnInput struct {
 	PersonImageData  []byte
+	PersonMimeType   string
 	GarmentImageData []byte
+	GarmentMimeType  string
 	Parameters       *TryOnParametersInput
 }
 
@@ -54,12 +56,12 @@ type ImageOutput struct {
 }
 
 func (uc *TryOnUseCase) Execute(ctx context.Context, input TryOnInput) (*TryOnOutput, error) {
-	personImage, err := valueobjects.NewImageData(input.PersonImageData)
+	personImage, err := valueobjects.NewImageData(input.PersonImageData, input.PersonMimeType)
 	if err != nil {
 		return nil, fmt.Errorf("invalid person image: %w", err)
 	}
 
-	garmentImage, err := valueobjects.NewImageData(input.GarmentImageData)
+	garmentImage, err := valueobjects.NewImageData(input.GarmentImageData, input.GarmentMimeType)
 	if err != nil {
 		return nil, fmt.Errorf("invalid garment image: %w", err)
 	}

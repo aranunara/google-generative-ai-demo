@@ -10,10 +10,10 @@ import (
 )
 
 type TryOnDomainService struct {
-	aiService repositories.AIService
+	aiService repositories.VertexAIService
 }
 
-func NewTryOnDomainService(aiService repositories.AIService) *TryOnDomainService {
+func NewTryOnDomainService(aiService repositories.VertexAIService) *TryOnDomainService {
 	return &TryOnDomainService{
 		aiService: aiService,
 	}
