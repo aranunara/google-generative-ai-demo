@@ -110,6 +110,7 @@ func main() {
 	r.HandleFunc("/tryon", handler.HandleTryOn).Methods("POST")
 	r.HandleFunc("/healthz", handler.HandleHealth).Methods("GET")
 	r.HandleFunc("/api/sample-images", handler.HandleSampleImages).Methods("GET")
+	r.HandleFunc("/api/sample-image", handler.HandleSampleImage).Methods("GET")
 
 	// 静的ファイル配信（CloudRunでも動作するように設定）
 	r.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("static/"))))

@@ -379,28 +379,28 @@ func (h *TryOnHandler) HandleSampleImages(w http.ResponseWriter, r *http.Request
 				ID:          "person_men",
 				Name:        "男性 (一般)",
 				Description: "カジュアルな服装の男性",
-				URL:         "https://storage.googleapis.com/try-on-generated-central/sample/person/sample_men.png",
+				URL:         "/api/sample-image?category=person&id=person_men",
 				Category:    "person",
 			},
 			{
 				ID:          "person_men_50",
 				Name:        "男性 (50代)",
 				Description: "フォーマルな服装の中年男性",
-				URL:         "https://storage.googleapis.com/try-on-generated-central/sample/person/sample_men_50.png",
+				URL:         "/api/sample-image?category=person&id=person_men_50",
 				Category:    "person",
 			},
 			{
 				ID:          "person_women_20",
 				Name:        "女性 (20代)",
 				Description: "カジュアルな服装の若い女性",
-				URL:         "https://storage.googleapis.com/try-on-generated-central/sample/person/sample_women_20.png",
+				URL:         "/api/sample-image?category=person&id=person_women_20",
 				Category:    "person",
 			},
 			{
 				ID:          "person_women_70",
 				Name:        "女性 (70代)",
 				Description: "エレガントな服装のシニア女性",
-				URL:         "https://storage.googleapis.com/try-on-generated-central/sample/person/sample_women_70.png",
+				URL:         "/api/sample-image?category=person&id=person_women_70",
 				Category:    "person",
 			},
 		}
@@ -410,42 +410,42 @@ func (h *TryOnHandler) HandleSampleImages(w http.ResponseWriter, r *http.Request
 				ID:          "garment_tops",
 				Name:        "トップス (ベーシック)",
 				Description: "シンプルなデザインのトップス",
-				URL:         "https://storage.googleapis.com/try-on-generated-central/sample/garment/sample_tops.png",
+				URL:         "/api/sample-image?category=garment&id=garment_tops",
 				Category:    "garment",
 			},
 			{
 				ID:          "garment_tops_hade",
 				Name:        "トップス (派手)",
 				Description: "カラフルで目立つデザインのトップス",
-				URL:         "https://storage.googleapis.com/try-on-generated-central/sample/garment/sample_tops_hade.png",
+				URL:         "/api/sample-image?category=garment&id=garment_tops_hade",
 				Category:    "garment",
 			},
 			{
 				ID:          "garment_pants",
 				Name:        "パンツ",
 				Description: "カジュアルなパンツ",
-				URL:         "https://storage.googleapis.com/try-on-generated-central/sample/garment/sample_pants.png",
+				URL:         "/api/sample-image?category=garment&id=garment_pants",
 				Category:    "garment",
 			},
 			{
 				ID:          "garment_shoes",
 				Name:        "シューズ",
 				Description: "スタイリッシュなシューズ",
-				URL:         "https://storage.googleapis.com/try-on-generated-central/sample/garment/sample_shoes.png",
+				URL:         "/api/sample-image?category=garment&id=garment_shoes",
 				Category:    "garment",
 			},
 			{
 				ID:          "garment_shoes_double",
 				Name:        "シューズ（両足）",
 				Description: "スタイリッシュなシューズ（両足）",
-				URL:         "https://storage.googleapis.com/try-on-generated-central/sample/garment/sample_shoes_double.png",
+				URL:         "/api/sample-image?category=garment&id=garment_shoes_double",
 				Category:    "garment",
 			},
 			{
 				ID:          "garment_neckless",
 				Name:        "ネックレス",
 				Description: "エレガントなネックレス",
-				URL:         "https://storage.googleapis.com/try-on-generated-central/sample/garment/sample_neckless.png",
+				URL:         "/api/sample-image?category=garment&id=garment_neckless",
 				Category:    "garment",
 			},
 		}
@@ -462,6 +462,87 @@ func (h *TryOnHandler) HandleSampleImages(w http.ResponseWriter, r *http.Request
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		log.Printf("Failed to encode sample images response: %v", err)
 		h.sendError(w, "レスポンスの生成に失敗しました", http.StatusInternalServerError)
+		return
+	}
+}
+
+func (h *TryOnHandler) HandleSampleImage(w http.ResponseWriter, r *http.Request) {
+	// URLパラメータからカテゴリとIDを取得
+	category := r.URL.Query().Get("category")
+	id := r.URL.Query().Get("id")
+	
+	if category == "" || id == "" {
+		h.sendError(w, "categoryとidパラメータが必要です", http.StatusBadRequest)
+		return
+	}
+
+	if category != "person" && category != "garment" {
+		h.sendError(w, "categoryは 'person' または 'garment' である必要があります", http.StatusBadRequest)
+		return
+	}
+
+	// サンプル画像の定義からURLを取得
+	var imageURL string
+	
+	if category == "person" {
+		switch id {
+		case "person_men":
+			imageURL = "https://storage.googleapis.com/try-on-generated-central/sample/person/sample_men.png"
+		case "person_men_50":
+			imageURL = "https://storage.googleapis.com/try-on-generated-central/sample/person/sample_men_50.png"
+		case "person_women_20":
+			imageURL = "https://storage.googleapis.com/try-on-generated-central/sample/person/sample_women_20.png"
+		case "person_women_70":
+			imageURL = "https://storage.googleapis.com/try-on-generated-central/sample/person/sample_women_70.png"
+		default:
+			h.sendError(w, "無効なperson ID", http.StatusBadRequest)
+			return
+		}
+	} else {
+		switch id {
+		case "garment_tops":
+			imageURL = "https://storage.googleapis.com/try-on-generated-central/sample/garment/sample_tops.png"
+		case "garment_tops_hade":
+			imageURL = "https://storage.googleapis.com/try-on-generated-central/sample/garment/sample_tops_hade.png"
+		case "garment_pants":
+			imageURL = "https://storage.googleapis.com/try-on-generated-central/sample/garment/sample_pants.png"
+		case "garment_shoes":
+			imageURL = "https://storage.googleapis.com/try-on-generated-central/sample/garment/sample_shoes.png"
+		case "garment_shoes_double":
+			imageURL = "https://storage.googleapis.com/try-on-generated-central/sample/garment/sample_shoes_double.png"
+		case "garment_neckless":
+			imageURL = "https://storage.googleapis.com/try-on-generated-central/sample/garment/sample_neckless.png"
+		default:
+			h.sendError(w, "無効なgarment ID", http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Google Cloud Storageから画像を取得してプロキシ
+	resp, err := http.Get(imageURL)
+	if err != nil {
+		log.Printf("Failed to fetch sample image from %s: %v", imageURL, err)
+		h.sendError(w, "サンプル画像の取得に失敗しました", http.StatusInternalServerError)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("Sample image fetch failed with status %d from %s", resp.StatusCode, imageURL)
+		h.sendError(w, "サンプル画像が見つかりません", http.StatusNotFound)
+		return
+	}
+
+	// Content-Typeとキャッシュヘッダーを設定
+	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+	w.Header().Set("Cache-Control", "public, max-age=3600") // 1時間キャッシュ
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET")
+
+	// 画像データをストリーム転送
+	_, err = io.Copy(w, resp.Body)
+	if err != nil {
+		log.Printf("Failed to copy sample image data: %v", err)
 		return
 	}
 }

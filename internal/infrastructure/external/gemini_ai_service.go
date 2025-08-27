@@ -53,3 +53,9 @@ func (s *GeminiAIService) TranslateToEnglish(ctx context.Context, request *entit
 
 	return entities.NewTextResult(respText), nil
 }
+
+// func (s *GeminiAIService) GenerateWithTextImage(ctx context.Context, request *entities.GeminiRequest) (*entities.GeminiResult, error) {
+// 	genai_std.Part{
+
+// 	}
+// }

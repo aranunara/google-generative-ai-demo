@@ -3,6 +3,7 @@ package external
 import (
 	"context"
 	"log"
+	"log/slog"
 	"os"
 	"time"
 
@@ -27,6 +28,8 @@ func (s *VeoAIService) GenerateVideo(
 	ctx context.Context,
 	request *entities.VeoRequest,
 ) (*entities.VeoResult, error) {
+	slog.Info("GenerateVideo", "request", request)
+
 	// 画像をgenai_std.GeneratedImageに変換
 	image := &genai_std.Image{
 		ImageBytes: request.Images().Data(),
