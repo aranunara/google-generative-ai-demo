@@ -1,0 +1,5 @@
+location: us-central1
+vto_model: virtual-try-on-preview-08-04
+api_key: gemini-api-key
+# GCS保存先URI
+gcs_uri: gs://your-gcs-bucket
