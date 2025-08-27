@@ -19,8 +19,10 @@ import (
 
 func main() {
 	isCloudBuild := os.Getenv("BUILD_ID") != ""
+	isCloudRun := os.Getenv("K_SERVICE") != ""
 
-	if !isCloudBuild && os.Getenv("GEMINI_API_KEY") == "" {
+	if !isCloudBuild && !isCloudRun && os.Getenv("GEMINI_API_KEY") == "" {
+		// 環境がCloud BuildでもCloud Runでもない場合は、GEMINI_API_KEYが必須
 		log.Fatal("環境変数 GEMINI_API_KEY が未設定です")
 	}
 
