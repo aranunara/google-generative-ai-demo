@@ -23,11 +23,6 @@ func main() {
 		log.Fatal("環境変数 GEMINI_API_KEY が未設定です")
 	}
 
-	// gcsUri := os.Getenv("GCS_URI")
-	// if gcsUri == "" {
-	// 	log.Fatal("環境変数 GCS_URI が未設定です")
-	// }
-
 	// 環境変数から設定を取得
 	projectID := os.Getenv("PROJECT_ID")
 	if projectID == "" {
