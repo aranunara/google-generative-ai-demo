@@ -307,6 +307,13 @@ if [ -n "$1" ]; then
     export VTO_MODEL=$1
 fi
 
+# config.yamlが存在しない場合はconfig.example.yamlをコピーしてconfig.yamlを作成
+if [ ! -f "config.yaml" ]; then
+    echo "🔐 config.yamlが存在しないため、config.example.yamlをコピーしてconfig.yamlを作成します"
+    cp config.example.yaml config.yaml
+    echo "🔐 config.yamlを作成しました"
+fi
+
 # config.yamlを読み込み（プロジェクトID以外）
 echo "🔐 config.yamlを読み込み"
 LOCATION=$(yq '.location' config.yaml 2>/dev/null || echo "us-central1")

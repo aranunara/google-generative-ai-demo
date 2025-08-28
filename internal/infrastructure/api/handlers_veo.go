@@ -165,8 +165,22 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-seri
 .tooltip .tooltiptext::after { content: ""; position: absolute; top: 100%; left: 50%; margin-left: -5px; border-width: 5px; border-style: solid; border-color: #333 transparent transparent transparent; }
 .tooltip:hover .tooltiptext { visibility: visible; opacity: 1; }
 .info-icon { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; background-color: #6366f1; color: white; font-size: 12px; font-weight: bold; margin-left: 4px; cursor: help; }
-.preview-box{width:100%;height:320px;background:#f3f4f6;border:2px dashed #d1d5db;display:flex;align-items:center;justify-content:center;overflow:hidden;border-radius:8px}
-.preview-box img{max-width:100%;max-height:100%;object-fit:contain}
+.image-upload-area {
+    border: 2px dashed #d1d5db;
+    background: #f9fafb;
+    border-radius: 8px;
+    transition: all 0.3s ease;
+    cursor: pointer;
+    min-height: 200px;
+}
+.image-upload-area:hover {
+    border-color: #6366f1;
+    background: #f3f4f6;
+}
+.image-upload-area.drag-over {
+    border-color: #6366f1;
+    background: #eef2ff;
+}
 .result-preview{width:100%;height:400px;background:#f3f4f6;border:2px dashed #d1d5db;display:flex;align-items:center;justify-content:center;overflow:hidden;border-radius:8px}
 .result-preview video{max-width:100%;max-height:100%;object-fit:contain}
 </style>
@@ -187,6 +201,10 @@ Imagen画像生成
 <button onclick="location.href='/veo'" class="px-4 py-2 bg-purple-700 text-white rounded-lg shadow-md font-medium ring-2 ring-purple-300">
 <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
 Veo動画生成
+</button>
+<button onclick="location.href='/nanobanana/image-editing'" class="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors font-medium shadow-sm">
+<svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+Nanobanana画像編集
 </button>
 </div>
 </nav>
@@ -223,15 +241,29 @@ Veo動画生成
 <span class="tooltiptext">動画生成のベースとなる画像ファイルをアップロードしてください。</span>
 </div>
 </label>
-<div id="image-preview" class="preview-box mb-3"><span class="text-gray-500">画像プレビュー</span></div>
-<div class="flex flex-wrap gap-2 mb-2">
-<label class="inline-flex items-center px-4 py-2 rounded-full bg-gradient-to-r from-indigo-500 to-blue-500 text-white shadow hover:shadow-lg cursor-pointer">
-<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6H17a3 3 0 010 6h-1m-4 5V10m0 0l-2 2m2-2l2 2"/></svg>
-<span>画像を選択</span>
-<input type="file" id="image-input" name="image" accept="image/*" class="hidden">
-</label>
+<div id="image-upload-area" class="image-upload-area p-6 text-center" onclick="document.getElementById('image-input').click()">
+<div id="upload-prompt" class="upload-prompt">
+<svg class="w-12 h-12 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6H17a3 3 0 010 6h-1m-4 5V10m0 0l-2 2m2-2l2 2"/>
+</svg>
+<p class="text-lg font-medium text-gray-700 mb-2">画像をドラッグ&ドロップ</p>
+<p class="text-sm text-gray-500 mb-4">または、クリックしてファイルを選択</p>
+<span class="inline-flex items-center px-4 py-2 rounded-full bg-gradient-to-r from-indigo-500 to-blue-500 text-white shadow hover:shadow-lg text-sm font-medium">
+<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6H17a3 3 0 010 6h-1m-4 5V10m0 0l-2 2m2-2l2 2"/>
+</svg>
+ファイルを選択
+</span>
 </div>
-<span id="image-name" class="ml-2 text-sm text-gray-500"></span>
+<div id="image-preview" class="hidden">
+<img id="preview-img" src="" alt="Preview" class="max-w-full max-h-48 object-contain mx-auto rounded-lg shadow-md">
+<p id="image-name" class="mt-2 text-sm text-gray-600 font-medium"></p>
+<button type="button" id="remove-image" class="mt-2 px-3 py-1 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600 transition-colors">
+削除
+</button>
+</div>
+</div>
+<input type="file" id="image-input" name="image" accept="image/*" class="hidden">
 </div>
 
 <!-- 画像生成用UI（非表示がデフォルト） -->
@@ -304,19 +336,69 @@ const imageGenerationSection = document.getElementById('image-generation-section
 
 // 画像プレビュー設定
 function setupImagePreview() {
-    imageInput.addEventListener('change', (event) => {
-        const file = event.target.files[0];
-        imageName.textContent = file ? file.name : '';
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                imagePreview.innerHTML = '<img src="' + e.target.result + '" alt="Preview">';
-            };
-            reader.readAsDataURL(file);
-        } else {
-            imagePreview.innerHTML = '<span class="text-gray-500">画像プレビュー</span>';
+    const imageUploadArea = document.getElementById('image-upload-area');
+    const uploadPrompt = document.getElementById('upload-prompt');
+    const previewImg = document.getElementById('preview-img');
+    const removeBtn = document.getElementById('remove-image');
+
+    // ドラッグ&ドロップ
+    imageUploadArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        imageUploadArea.classList.add('drag-over');
+    });
+
+    imageUploadArea.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        if (!imageUploadArea.contains(e.relatedTarget)) {
+            imageUploadArea.classList.remove('drag-over');
         }
     });
+
+    imageUploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        imageUploadArea.classList.remove('drag-over');
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+            const file = files[0];
+            if (file.type.startsWith('image/')) {
+                imageInput.files = files;
+                showImagePreview(file);
+            }
+        }
+    });
+
+    // ファイル選択
+    imageInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            showImagePreview(file);
+        }
+    });
+
+    // 削除ボタン
+    removeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        clearImagePreview();
+    });
+
+    function showImagePreview(file) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            previewImg.src = e.target.result;
+            imageName.textContent = file.name;
+            uploadPrompt.classList.add('hidden');
+            imagePreview.classList.remove('hidden');
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function clearImagePreview() {
+        imageInput.value = '';
+        previewImg.src = '';
+        imageName.textContent = '';
+        uploadPrompt.classList.remove('hidden');
+        imagePreview.classList.add('hidden');
+    }
 }
 
 setupImagePreview();
@@ -324,6 +406,8 @@ setupImagePreview();
 // チェックボックスの状態変更を監視してUIを切り替え
 function toggleImageInputMethod() {
     const useGeneration = useImageGenerationCheckbox.checked;
+    const uploadPrompt = document.getElementById('upload-prompt');
+    const previewImg = document.getElementById('preview-img');
     
     if (useGeneration) {
         // 画像生成を使用する場合
@@ -332,7 +416,9 @@ function toggleImageInputMethod() {
         // 画像アップロード関連をクリア
         imageInput.value = '';
         imageName.textContent = '';
-        imagePreview.innerHTML = '<span class="text-gray-500">画像プレビュー</span>';
+        previewImg.src = '';
+        uploadPrompt.classList.remove('hidden');
+        imagePreview.classList.add('hidden');
     } else {
         // 画像アップロードを使用する場合
         imageUploadSection.style.display = 'block';
@@ -351,11 +437,16 @@ toggleImageInputMethod();
 // クリアボタン
 clearBtn.addEventListener('click', () => {
     if (confirm('全ての入力内容をクリアしますか？')) {
+        const uploadPrompt = document.getElementById('upload-prompt');
+        const previewImg = document.getElementById('preview-img');
+        
         videoPromptInput.value = '';
         imagenPromptInput.value = '';
         imageInput.value = '';
         imageName.textContent = '';
-        imagePreview.innerHTML = '<span class="text-gray-500">画像プレビュー</span>';
+        previewImg.src = '';
+        uploadPrompt.classList.remove('hidden');
+        imagePreview.classList.add('hidden');
         resultDisplay.innerHTML = '';
         resultSection.classList.add('hidden');
         errorMessage.classList.add('hidden');

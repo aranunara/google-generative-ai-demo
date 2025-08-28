@@ -34,3 +34,9 @@ type TextAIService interface {
 	// 英語のプロンプトに翻訳
 	TranslateToEnglish(ctx context.Context, request *entities.TextRequest) (*entities.TextResult, error)
 }
+
+// nanobanana（画像生成、加工）サービス
+type NanobananaAIService interface {
+	// 画像加工
+	ModifyImage(ctx context.Context, request *entities.NanobananaModifyRequest) (*entities.NanobananaResult, error)
+}

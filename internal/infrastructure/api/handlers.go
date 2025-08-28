@@ -470,7 +470,7 @@ func (h *TryOnHandler) HandleSampleImage(w http.ResponseWriter, r *http.Request)
 	// URLパラメータからカテゴリとIDを取得
 	category := r.URL.Query().Get("category")
 	id := r.URL.Query().Get("id")
-	
+
 	if category == "" || id == "" {
 		h.sendError(w, "categoryとidパラメータが必要です", http.StatusBadRequest)
 		return
@@ -483,7 +483,7 @@ func (h *TryOnHandler) HandleSampleImage(w http.ResponseWriter, r *http.Request)
 
 	// サンプル画像の定義からURLを取得
 	var imageURL string
-	
+
 	if category == "person" {
 		switch id {
 		case "person_men":
@@ -567,6 +567,22 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-seri
 .tooltip .tooltiptext::after { content: ""; position: absolute; top: 100%; left: 50%; margin-left: -5px; border-width: 5px; border-style: solid; border-color: #333 transparent transparent transparent; }
 .tooltip:hover .tooltiptext { visibility: visible; opacity: 1; }
 .info-icon { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; background-color: #6366f1; color: white; font-size: 12px; font-weight: bold; margin-left: 4px; cursor: help; }
+.image-upload-area {
+    border: 2px dashed #d1d5db;
+    background: #f9fafb;
+    border-radius: 8px;
+    transition: all 0.3s ease;
+    cursor: pointer;
+    min-height: 200px;
+}
+.image-upload-area:hover {
+    border-color: #6366f1;
+    background: #f3f4f6;
+}
+.image-upload-area.drag-over {
+    border-color: #6366f1;
+    background: #eef2ff;
+}
 </style>
 </head>
 <body class="bg-gray-50 text-gray-800">
@@ -586,6 +602,10 @@ Imagen画像生成
 <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
 Veo動画生成
 </button>
+<button onclick="location.href='/nanobanana/image-editing'" class="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors font-medium shadow-sm">
+<svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+Nanobanana画像編集
+</button>
 </div>
 </nav>
 
@@ -597,36 +617,48 @@ Veo動画生成
 <form id="tryon-form">
 <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
 <div>
-<label class="block text-lg font-semibold mb-2 text-gray-700">1. 人物画像</label>
-<div id="person-preview" class="preview-box rounded-lg mb-3"><span class="text-gray-500">プレビュー</span></div>
-<div class="flex flex-wrap gap-2 mb-2">
-<label class="inline-flex items-center px-4 py-2 rounded-full bg-gradient-to-r from-indigo-500 to-blue-500 text-white shadow hover:shadow-lg cursor-pointer">
-<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6H17a3 3 0 010 6h-1m-4 5V10m0 0l-2 2m2-2l2 2"/></svg>
-<span>ファイルを選択</span>
-<input type="file" id="person-image" name="person_image" accept="image/*" class="hidden">
-</label>
-<button type="button" id="person-sample-btn" class="inline-flex items-center px-4 py-2 rounded-full bg-gradient-to-r from-green-500 to-teal-500 text-white shadow hover:shadow-lg">
-<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+<label class="block text-lg font-semibold mb-2 text-gray-700">1. 人物画像をアップロード</label>
+<div class="image-upload-area p-8 text-center" id="person-upload-area">
+<input type="file" id="person-image" name="person_image" accept="image/*" class="hidden" required>
+<div id="person-upload-content">
+<svg class="mx-auto h-12 w-12 text-gray-400 mb-4" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+<path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+<p class="text-lg text-gray-600 mb-2">人物画像をドラッグ&ドロップするか、クリックして選択</p>
+<p class="text-sm text-gray-500 mb-4">JPG, PNG形式をサポート</p>
+<button type="button" id="person-sample-btn" class="inline-flex items-center px-4 py-2 rounded-lg bg-gradient-to-r from-green-500 to-teal-500 text-white shadow hover:shadow-lg">
+<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
 <span>サンプルから選択</span>
 </button>
 </div>
-<span id="person-name" class="ml-2 text-sm text-gray-500"></span>
+<div id="person-preview" class="hidden">
+<img id="person-preview-image" class="max-w-full max-h-64 mx-auto rounded-lg">
+<p class="text-sm text-gray-600 mt-2">別の画像に変更するにはクリック</p>
+</div>
+</div>
+<span id="person-name" class="text-sm text-gray-500 mt-2"></span>
 </div>
 <div>
-<label class="block text-lg font-semibold mb-2 text-gray-700">2. 衣服画像</label>
-<div id="garment-preview" class="preview-box rounded-lg mb-3"><span class="text-gray-500">プレビュー</span></div>
-<div class="flex flex-wrap gap-2 mb-2">
-<label class="inline-flex items-center px-4 py-2 rounded-full bg-gradient-to-r from-indigo-500 to-blue-500 text-white shadow hover:shadow-lg cursor-pointer">
-<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6H17a3 3 0 010 6h-1m-4 5V10m0 0l-2 2m2-2l2 2"/></svg>
-<span>ファイルを選択</span>
-<input type="file" id="garment-image" name="garment_image" accept="image/*" class="hidden">
-</label>
-<button type="button" id="garment-sample-btn" class="inline-flex items-center px-4 py-2 rounded-full bg-gradient-to-r from-green-500 to-teal-500 text-white shadow hover:shadow-lg">
-<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+<label class="block text-lg font-semibold mb-2 text-gray-700">2. 衣服画像をアップロード</label>
+<div class="image-upload-area p-8 text-center" id="garment-upload-area">
+<input type="file" id="garment-image" name="garment_image" accept="image/*" class="hidden" required>
+<div id="garment-upload-content">
+<svg class="mx-auto h-12 w-12 text-gray-400 mb-4" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+<path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+<p class="text-lg text-gray-600 mb-2">衣服画像をドラッグ&ドロップするか、クリックして選択</p>
+<p class="text-sm text-gray-500 mb-4">JPG, PNG形式をサポート</p>
+<button type="button" id="garment-sample-btn" class="inline-flex items-center px-4 py-2 rounded-lg bg-gradient-to-r from-green-500 to-teal-500 text-white shadow hover:shadow-lg">
+<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
 <span>サンプルから選択</span>
 </button>
 </div>
-<span id="garment-name" class="ml-2 text-sm text-gray-500"></span>
+<div id="garment-preview" class="hidden">
+<img id="garment-preview-image" class="max-w-full max-h-64 mx-auto rounded-lg">
+<p class="text-sm text-gray-600 mt-2">別の画像に変更するにはクリック</p>
+</div>
+</div>
+<span id="garment-name" class="text-sm text-gray-500 mt-2"></span>
 </div>
 </div>
 <!-- 詳細設定セクション -->
@@ -792,8 +824,14 @@ class="px-6 py-2 text-sm rounded-lg border border-gray-300 text-gray-600 hover:b
 const form = document.getElementById('tryon-form');
 const personInput = document.getElementById('person-image');
 const garmentInput = document.getElementById('garment-image');
+const personUploadArea = document.getElementById('person-upload-area');
+const garmentUploadArea = document.getElementById('garment-upload-area');
+const personUploadContent = document.getElementById('person-upload-content');
+const garmentUploadContent = document.getElementById('garment-upload-content');
 const personPreview = document.getElementById('person-preview');
 const garmentPreview = document.getElementById('garment-preview');
+const personPreviewImage = document.getElementById('person-preview-image');
+const garmentPreviewImage = document.getElementById('garment-preview-image');
 const personName = document.getElementById('person-name');
 const garmentName = document.getElementById('garment-name');
 const resultSection = document.getElementById('result-section');
@@ -825,20 +863,56 @@ let currentPersonSample = null;
 let currentGarmentSample = null;
 let currentModalCategory = null;
 
-function setupPreview(input, previewElement, nameLabel) {
-    input.addEventListener('change', (event) => {
-        const file = event.target.files[0];
-        nameLabel.textContent = file ? file.name : '';
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                previewElement.innerHTML = '<img src="' + e.target.result + '" alt="Preview">';
-            };
-            reader.readAsDataURL(file);
-        } else {
-            previewElement.innerHTML = '<span class="text-gray-500">プレビュー</span>';
+// ファイルアップロード関連の処理
+function setupDragAndDrop(uploadArea, input, uploadContent, previewElement, previewImage, nameLabel) {
+    uploadArea.addEventListener('click', () => {
+        input.click();
+    });
+
+    uploadArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadArea.classList.add('drag-over');
+    });
+
+    uploadArea.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        uploadArea.classList.remove('drag-over');
+    });
+
+    uploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        uploadArea.classList.remove('drag-over');
+        
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+            handleFileSelect(files[0], input, uploadContent, previewElement, previewImage, nameLabel);
         }
     });
+
+    input.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+            handleFileSelect(e.target.files[0], input, uploadContent, previewElement, previewImage, nameLabel);
+        }
+    });
+}
+
+function handleFileSelect(file, input, uploadContent, previewElement, previewImage, nameLabel) {
+    if (!file.type.startsWith('image/')) {
+        errorMessage.textContent = '画像ファイルを選択してください';
+        errorMessage.classList.remove('hidden');
+        return;
+    }
+    
+    errorMessage.classList.add('hidden');
+    
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        previewImage.src = e.target.result;
+        uploadContent.classList.add('hidden');
+        previewElement.classList.remove('hidden');
+        nameLabel.textContent = file.name;
+    };
+    reader.readAsDataURL(file);
 }
 
 // サンプル画像関連の関数
@@ -886,14 +960,20 @@ function showSampleModal(category) {
 function selectSampleImage(sample, category) {
     if (category === 'person') {
         currentPersonSample = sample;
-        personPreview.innerHTML = '<img src="' + sample.url + '" alt="' + sample.name + '">';
+        personPreviewImage.src = sample.url;
+        personPreviewImage.alt = sample.name;
+        personUploadContent.classList.add('hidden');
+        personPreview.classList.remove('hidden');
         personName.textContent = sample.name + ' (サンプル)';
         // ファイル入力をクリアしてサンプル使用を示す
         personInput.value = '';
         personInput.removeAttribute('required');
     } else {
         currentGarmentSample = sample;
-        garmentPreview.innerHTML = '<img src="' + sample.url + '" alt="' + sample.name + '">';
+        garmentPreviewImage.src = sample.url;
+        garmentPreviewImage.alt = sample.name;
+        garmentUploadContent.classList.add('hidden');
+        garmentPreview.classList.remove('hidden');
         garmentName.textContent = sample.name + ' (サンプル)';
         // ファイル入力をクリアしてサンプル使用を示す
         garmentInput.value = '';
@@ -910,11 +990,13 @@ function closeSampleModal() {
 }
 
 // サンプル画像ボタンのイベントリスナー
-personSampleBtn.addEventListener('click', () => {
+personSampleBtn.addEventListener('click', (e) => {
+    e.stopPropagation(); // 親要素のクリックイベントを防ぐ
     showSampleModal('person');
 });
 
-garmentSampleBtn.addEventListener('click', () => {
+garmentSampleBtn.addEventListener('click', (e) => {
+    e.stopPropagation(); // 親要素のクリックイベントを防ぐ  
     showSampleModal('garment');
 });
 
@@ -976,16 +1058,21 @@ mimeTypeSelect.addEventListener('change', updateCompressionQualityAvailability);
 updateSeedAvailability();
 updateCompressionQualityAvailability();
 
-setupPreview(personInput, personPreview, personName);
-setupPreview(garmentInput, garmentPreview, garmentName);
+setupDragAndDrop(personUploadArea, personInput, personUploadContent, personPreview, personPreviewImage, personName);
+setupDragAndDrop(garmentUploadArea, garmentInput, garmentUploadContent, garmentPreview, garmentPreviewImage, garmentName);
 
 clearBtn.addEventListener('click', () => {
     personInput.value = '';
     garmentInput.value = '';
     personName.textContent = '';
     garmentName.textContent = '';
-    personPreview.innerHTML = '<span class="text-gray-500">プレビュー</span>';
-    garmentPreview.innerHTML = '<span class="text-gray-500">プレビュー</span>';
+    
+    // 画像プレビューをリセット
+    personUploadContent.classList.remove('hidden');
+    personPreview.classList.add('hidden');
+    garmentUploadContent.classList.remove('hidden');
+    garmentPreview.classList.add('hidden');
+    
     resultDisplay.innerHTML = '';
     multipleResults.innerHTML = '';
     multipleResults.style.display = 'none';

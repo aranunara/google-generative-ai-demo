@@ -84,6 +84,9 @@ func main() {
 	// Veo AI Service初期化
 	veoAIService := external.NewVeoAIService(genaiClient)
 
+	// Nanobanana AI Service初期化
+	nanobananaAIService := external.NewNanobananaAIService(genaiClient)
+
 	// リポジトリ層を初期化
 	tryOnRepository := repositories.NewMemoryTryOnRepository()
 
@@ -92,17 +95,20 @@ func main() {
 	tryOnDomainService := domainservices.NewTryOnDomainService(vertexAIService)
 	imagenDomainService := domainservices.NewImagenDomainService(imagenAIService, textAIService)
 	veoDomainService := domainservices.NewVeoDomainService(veoAIService, textAIService)
+	nanobananaDomainService := domainservices.NewNanobananaDomainService(nanobananaAIService, textAIService)
 
 	// アプリケーション層を初期化
 	tryOnUseCase := usecases.NewTryOnUseCase(tryOnRepository, tryOnDomainService)
 	imagenUseCase := usecases.NewImagenUseCase(imagenDomainService)
 	veoUseCase := usecases.NewVeoUseCase(veoDomainService, imagenDomainService)
+	nanobananaUseCase := usecases.NewNanobananaUseCase(nanobananaDomainService)
 	parameterService := appservices.NewParameterService()
 
 	// API層を初期化
 	handler := api.NewTryOnHandler(tryOnUseCase, parameterService, location)
 	imagenHandler := api.NewImagenHandler(imagenUseCase, location)
 	veoHandler := api.NewVeoHandler(veoUseCase, location)
+	nanobananaHandler := api.NewNanobananaHandler(nanobananaUseCase, location)
 
 	// ルートを設定
 	r := mux.NewRouter()
@@ -120,6 +126,10 @@ func main() {
 	// Veo関連のルート
 	r.HandleFunc("/veo", veoHandler.HandleVeoIndex).Methods("GET")
 	r.HandleFunc("/veo", veoHandler.HandleVeo).Methods("POST")
+
+	// Nanobanana関連のルート
+	r.HandleFunc("/nanobanana/image-editing", nanobananaHandler.HandleNanobananaIndex).Methods("GET")
+	r.HandleFunc("/nanobanana/image-editing", nanobananaHandler.HandleNanobanana).Methods("POST")
 
 	// サーバーを起動
 	port := os.Getenv("PORT")
