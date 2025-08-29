@@ -36,7 +36,7 @@ type VeoInput struct {
 }
 
 type VeoOutput struct {
-	Video []byte
+	Videos [][]byte
 }
 
 func (uc *VeoUseCase) Execute(ctx context.Context, input VeoInput) (*VeoOutput, error) {
@@ -63,16 +63,19 @@ func (uc *VeoUseCase) Execute(ctx context.Context, input VeoInput) (*VeoOutput, 
 	// 動画生成を行う
 	slog.Info("Execute Video Generation", "VideoPrompt", input.VideoPrompt, "VideoModel", input.VideoModel)
 	veoRequest := entities.NewVeoRequest(imageData, input.VideoModel, input.VideoPrompt)
-	veoOutput, err := uc.veoDomainService.ProcessVeo(ctx, veoRequest)
+	veoResults, err := uc.veoDomainService.ProcessVeo(ctx, veoRequest)
 	if err != nil {
 		return nil, err
 	}
 
-	videoData := valueobjects.NewVideoData(veoOutput.Video().Data())
+	slog.Info("Successfully generated video", "count", len(veoResults))
 
-	slog.Info("Successfully generated video")
+	videos := make([][]byte, len(veoResults))
+	for i, veoResult := range veoResults {
+		videos[i] = veoResult.Video().Data()
+	}
 
 	return &VeoOutput{
-		Video: videoData.Data(),
+		Videos: videos,
 	}, nil
 }

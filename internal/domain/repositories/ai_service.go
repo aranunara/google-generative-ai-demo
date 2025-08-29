@@ -15,7 +15,7 @@ type VertexAIService interface {
 
 // Veo（動画生成）サービス
 type VeoAIService interface {
-	GenerateVideo(ctx context.Context, request *entities.VeoRequest) (*entities.VeoResult, error)
+	GenerateVideo(ctx context.Context, request *entities.VeoRequest) ([]*entities.VeoResult, error)
 
 	Close() error
 }

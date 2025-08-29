@@ -33,7 +33,7 @@ func (s *ImagenDomainService) ProcessImagen(
 	}
 
 	// プロンプトを英語に翻訳
-	textRequest := entities.NewTextRequest(request.Prompt())
+	textRequest := entities.NewTextRequest(request.Prompt(), request.ImagenModel())
 	textResult, err := s.textAIService.TranslateToEnglish(ctx, textRequest)
 	if err != nil {
 		return nil, fmt.Errorf("text generation failed: %w", err)

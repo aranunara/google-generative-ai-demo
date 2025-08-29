@@ -24,13 +24,13 @@ func NewVeoDomainService(veoAIService repositories.VeoAIService, textAIService r
 func (s *VeoDomainService) ProcessVeo(
 	ctx context.Context,
 	request *entities.VeoRequest,
-) (*entities.VeoResult, error) {
+) ([]*entities.VeoResult, error) {
 	if err := s.validateRequest(request); err != nil {
 		return nil, fmt.Errorf("request validation failed: %w", err)
 	}
 
 	if request.VideoPrompt() != "" {
-		textRequest := entities.NewTextRequest(request.VideoPrompt())
+		textRequest := entities.NewTextRequest(request.VideoPrompt(), request.VeoModel())
 		textResult, err := s.textAIService.TranslateToEnglish(ctx, textRequest)
 		if err != nil {
 			return nil, fmt.Errorf("text generation failed: %w", err)
@@ -39,7 +39,7 @@ func (s *VeoDomainService) ProcessVeo(
 		request.SetVideoPrompt(textResult.Text())
 	}
 
-	result, err := s.veoAIService.GenerateVideo(ctx, request)
+	results, err := s.veoAIService.GenerateVideo(ctx, request)
 	if err != nil {
 		if s.isQuotaError(err) {
 			return nil, fmt.Errorf("service temporarily unavailable due to high demand: %w", err)
@@ -48,11 +48,11 @@ func (s *VeoDomainService) ProcessVeo(
 	}
 
 	// 動画が生成されなかった場合はエラー
-	if result.Video() == nil {
+	if len(results) == 0 {
 		return nil, fmt.Errorf("no video generated")
 	}
 
-	return result, nil
+	return results, nil
 }
 
 func (s *VeoDomainService) validateRequest(request *entities.VeoRequest) error {

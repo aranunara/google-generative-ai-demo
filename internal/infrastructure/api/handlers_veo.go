@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 
 	"tryon-demo/internal/application/usecases"
 )
@@ -34,7 +35,12 @@ func (h *VeoHandler) HandleVeo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	veoModel := h.getDefaultVeoModel() // サーバー側で固定
+	veoModel := r.FormValue("veoModel")
+	if veoModel == "" {
+		h.sendError(w, "Veoモデルを選択してください", http.StatusBadRequest)
+		return
+	}
+
 	isValidVeoModel := h.isValidVeoModel(veoModel)
 	if !isValidVeoModel {
 		h.sendError(w, "無効なモデルです", http.StatusBadRequest)
@@ -90,7 +96,7 @@ func (h *VeoHandler) HandleVeo(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store, max-age=0")
 
-	response := h.createVeoResponse(output.Video)
+	response := h.createVeoResponse(output.Videos)
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		log.Printf("Failed to encode JSON response: %v", err)
@@ -100,30 +106,86 @@ func (h *VeoHandler) HandleVeo(w http.ResponseWriter, r *http.Request) {
 }
 
 // createVeoResponse - Veo用のレスポンスを生成
-func (h *VeoHandler) createVeoResponse(videoData []byte) map[string]any {
-	log.Printf("[DEBUG] createVeoResponse called with video size: %d bytes", len(videoData))
+func (h *VeoHandler) createVeoResponse(videosData [][]byte) map[string]any {
+	log.Printf("[DEBUG] createVeoResponse called with %d videos", len(videosData))
 
-	if len(videoData) == 0 {
-		log.Printf("[WARNING] Empty video data")
+	if len(videosData) == 0 {
+		log.Printf("[WARNING] No video data")
 		return map[string]any{
 			"success": false,
-			"error":   "動画データが空です",
+			"error":   "動画データがありません",
 		}
 	}
 
-	base64Data := base64.StdEncoding.EncodeToString(videoData)
-	log.Printf("[DEBUG] Base64 encoded video length: %d characters", len(base64Data))
+	videos := make([]map[string]string, 0, len(videosData))
+	totalSize := 0
+	for i, videoData := range videosData {
+		if len(videoData) == 0 {
+			log.Printf("[WARNING] Empty video data at index %d", i)
+			continue
+		}
+
+		base64Data := base64.StdEncoding.EncodeToString(videoData)
+		totalSize += len(videoData)
+		log.Printf("[DEBUG] Video %d: size=%d bytes, base64 length=%d characters", i, len(videoData), len(base64Data))
+
+		videos = append(videos, map[string]string{
+			"data": base64Data,
+			"type": "video/mp4",
+		})
+	}
+
+	if len(videos) == 0 {
+		log.Printf("[WARNING] All video data is empty")
+		return map[string]any{
+			"success": false,
+			"error":   "すべての動画データが空です",
+		}
+	}
+
+	log.Printf("[DEBUG] Total %d videos, total size: %d bytes", len(videos), totalSize)
 
 	response := map[string]any{
 		"success": true,
-		"video": map[string]string{
-			"data": base64Data,
-			"type": "video/mp4",
-		},
-		"model": h.getDefaultVeoModel(),
+		"videos":  videos,
+		"model":   h.getDefaultVeoModel(),
 	}
 
 	return response
+}
+
+// isValidVeoModel - 指定されたモデルIDが有効かどうかチェック
+func (h *VeoHandler) isValidVeoModel(modelID string) bool {
+	for _, model := range supportedVeoModels {
+		if model.ID == modelID {
+			return true
+		}
+	}
+	return false
+}
+
+// getDefaultVeoModel - デフォルトのVeoモデルIDを取得
+func (h *VeoHandler) getDefaultVeoModel() string {
+	return "veo-3.0-generate-preview" // 固定モデル
+}
+
+// サポートされるVeoモデル一覧（サーバー側で固定）
+var supportedVeoModels = []VeoModel{
+	{
+		ID:          "veo-3.0-generate-preview",
+		Name:        "Veo 3.0 Preview",
+		Description: "最新動画生成モデル（プレビュー版）",
+	},
+	{
+		ID:          "veo-3.0-fast-generate-preview",
+		Name:        "Veo 3.0 Fast",
+		Description: "最新動画生成モデル（高速版）",
+	},
+	{
+		ID:          "veo-2.0-generate-001",
+		Name:        "Veo 2.0",
+		Description: "動画生成モデル（旧バージョン）",
+	},
 }
 
 // isQuotaError - クォータエラーかどうかを判定
@@ -148,6 +210,25 @@ func (h *VeoHandler) getDefaultImagenModelForVeo() string {
 func (h *VeoHandler) HandleVeoIndex(w http.ResponseWriter, r *http.Request) {
 	// 現在のVertex AIリージョン情報をツールチップに含める
 	locationInfo := fmt.Sprintf(" 現在のVertex AIリージョン: %s", h.location)
+
+	// モデル選択肢を動的に生成
+	var modelOptions strings.Builder
+	for i, model := range supportedVeoModels {
+		selected := ""
+		if model.ID == h.getDefaultVeoModel() {
+			selected = " selected"
+		}
+
+		modelOptions.WriteString(fmt.Sprintf(
+			`<option value="%s"%s>%s</option>`,
+			model.ID,
+			selected,
+			fmt.Sprintf("%s - %s", model.Name, model.Description),
+		))
+		if i < len(supportedImagenModels)-1 {
+			modelOptions.WriteString("\n")
+		}
+	}
 
 	html := `<!DOCTYPE html>
 <html lang="ja">
@@ -282,6 +363,18 @@ placeholder="例: A beautiful landscape with mountains and a lake during sunset"
 </div>
 <div>
 <label class="block text-lg font-semibold mb-2 text-gray-700">
+Imagenモデル
+<div class="tooltip">
+<span class="info-icon">?</span>
+<span class="tooltiptext">使用するImagenモデルを選択してください。新しいバージョンほど高品質な画像を生成できますが、処理時間が長くなる場合があります。` + locationInfo + `</span>
+</div>
+</label>
+<select id="veoModel" name="veoModel" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+` + modelOptions.String() + `
+</select>
+</div>
+<div>
+<label class="block text-lg font-semibold mb-2 text-gray-700">
 動画プロンプト（必須）
 <div class="tooltip">
 <span class="info-icon">?</span>
@@ -321,6 +414,7 @@ class="px-6 py-2 text-sm rounded-lg border border-gray-300 text-gray-600 hover:b
 <script>
 const form = document.getElementById('veo-form');
 const videoPromptInput = document.getElementById('videoPrompt');
+const veoModelInput = document.getElementById('veoModel');
 const imagenPromptInput = document.getElementById('imagenPrompt');
 const imageInput = document.getElementById('image-input');
 const imagePreview = document.getElementById('image-preview');
@@ -465,7 +559,8 @@ form.addEventListener('submit', async (event) => {
     const useGeneration = useImageGenerationCheckbox.checked;
     const imagenPrompt = imagenPromptInput.value.trim();
     const imageFile = imageInput.files[0];
-    
+    const veoModel = veoModelInput.value;
+
     if (!videoPrompt) {
         errorMessage.textContent = '動画プロンプトを入力してください';
         errorMessage.classList.remove('hidden');
@@ -505,7 +600,7 @@ form.addEventListener('submit', async (event) => {
 
     const formData = new FormData();
     formData.append('videoPrompt', videoPrompt);
-    
+	formData.append('veoModel', veoModel);
     if (useGeneration) {
         // 画像生成を使用する場合
         formData.append('imagenPrompt', imagenPrompt);
@@ -526,56 +621,60 @@ form.addEventListener('submit', async (event) => {
         }
         
         const data = await resp.json();
-        if (data.success && data.video) {
-            // 動画表示
-            const videoContainer = document.createElement('div');
-            videoContainer.className = 'relative w-full h-full flex items-center justify-center';
-            
-            const videoElement = document.createElement('video');
-            videoElement.src = 'data:' + data.video.type + ';base64,' + data.video.data;
-            videoElement.alt = 'Generated Video';
-            videoElement.className = 'max-w-full max-h-full object-contain rounded-lg shadow-md';
-            videoElement.controls = true;
-            videoElement.autoplay = false;
-            
-            const saveBtn = document.createElement('button');
-            saveBtn.textContent = '保存';
-            saveBtn.className = 'absolute top-2 right-2 bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-sm transition-colors';
-            saveBtn.onclick = (event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                
-                const originalText = saveBtn.textContent;
-                const originalClass = saveBtn.className;
-                saveBtn.textContent = '保存中...';
-                saveBtn.className = 'absolute top-2 right-2 bg-gray-400 text-white px-3 py-1 rounded text-sm cursor-not-allowed';
-                saveBtn.disabled = true;
-                
-                setTimeout(() => {
-                    try {
-                        const link = document.createElement('a');
-                        link.href = videoElement.src;
-                        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-                        link.download = 'veo-result-' + timestamp + '.mp4';
-                        document.body.appendChild(link);
-                        link.click();
-                        document.body.removeChild(link);
-                    } catch (error) {
-                        console.error('Download failed:', error);
-                    } finally {
-                        setTimeout(() => {
-                            saveBtn.textContent = originalText;
-                            saveBtn.className = originalClass;
-                            saveBtn.disabled = false;
-                        }, 500);
-                    }
-                }, 100);
-            };
-            
-            videoContainer.appendChild(videoElement);
-            videoContainer.appendChild(saveBtn);
+		console.log(data);
+        if (data.success && data.videos && data.videos.length > 0) {
             resultDisplay.innerHTML = '';
-            resultDisplay.appendChild(videoContainer);
+            
+            // 複数動画を表示
+            data.videos.forEach((video, index) => {
+                const videoContainer = document.createElement('div');
+                videoContainer.className = 'relative w-full h-full flex items-center justify-center mb-4';
+                
+                const videoElement = document.createElement('video');
+                videoElement.src = 'data:' + video.type + ';base64,' + video.data;
+                videoElement.alt = 'Generated Video ' + (index + 1);
+                videoElement.className = 'max-w-full max-h-full object-contain rounded-lg shadow-md';
+                videoElement.controls = true;
+                videoElement.autoplay = false;
+                
+                const saveBtn = document.createElement('button');
+                saveBtn.textContent = '保存 ' + (index + 1);
+                saveBtn.className = 'absolute top-2 right-2 bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-sm transition-colors';
+                saveBtn.onclick = (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    
+                    const originalText = saveBtn.textContent;
+                    const originalClass = saveBtn.className;
+                    saveBtn.textContent = '保存中...';
+                    saveBtn.className = 'absolute top-2 right-2 bg-gray-400 text-white px-3 py-1 rounded text-sm cursor-not-allowed';
+                    saveBtn.disabled = true;
+                    
+                    setTimeout(() => {
+                        try {
+                            const link = document.createElement('a');
+                            link.href = videoElement.src;
+                            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+                            link.download = 'veo-result-' + (index + 1) + '-' + timestamp + '.mp4';
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                        } catch (error) {
+                            console.error('Download failed:', error);
+                        } finally {
+                            setTimeout(() => {
+                                saveBtn.textContent = originalText;
+                                saveBtn.className = originalClass;
+                                saveBtn.disabled = false;
+                            }, 500);
+                        }
+                    }, 100);
+                };
+                
+                videoContainer.appendChild(videoElement);
+                videoContainer.appendChild(saveBtn);
+                resultDisplay.appendChild(videoContainer);
+            });
         } else {
             throw new Error('動画の生成に失敗しました');
         }

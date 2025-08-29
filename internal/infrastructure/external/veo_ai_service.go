@@ -2,9 +2,9 @@ package external
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"log/slog"
-	"os"
 	"time"
 
 	genai_std "google.golang.org/genai"
@@ -27,7 +27,7 @@ func NewVeoAIService(genAIClient *genai_std.Client) repositories.VeoAIService {
 func (s *VeoAIService) GenerateVideo(
 	ctx context.Context,
 	request *entities.VeoRequest,
-) (*entities.VeoResult, error) {
+) ([]*entities.VeoResult, error) {
 	slog.Info("GenerateVideo", "request", request)
 
 	// 画像をgenai_std.GeneratedImageに変換
@@ -42,7 +42,11 @@ func (s *VeoAIService) GenerateVideo(
 		request.VeoModel(),
 		request.VideoPrompt(),
 		image,
-		nil, // GenerateVideosConfig
+		// 2025/08/28時点で、対応していないらしい：　generateAudio parameter is not supported in Gemini API
+		// GenerateAudio: request.GenerateAudio(),
+		&genai_std.GenerateVideosConfig{
+			NumberOfVideos: 1,
+		},
 	)
 	if err != nil {
 		log.Fatal(err)
@@ -55,16 +59,34 @@ func (s *VeoAIService) GenerateVideo(
 		operation, _ = s.genAIClient.Operations.GetVideosOperation(ctx, operation, nil)
 	}
 
+	if operation.Error != nil {
+		return nil, fmt.Errorf("video generation failed: %v", operation.Error)
+	}
+
+	slog.Info("operation.Metadata", "value", operation.Metadata)
+	slog.Info("operation.Response.GeneratedVideos", "counts", len(operation.Response.GeneratedVideos))
+
 	// 動画をダウンロード
-	video := operation.Response.GeneratedVideos[0]
-	s.genAIClient.Files.Download(ctx, video.Video, nil)
-	fname := "veo3_with_image_input.mp4"
-	_ = os.WriteFile(fname, video.Video.VideoBytes, 0644)
-	log.Printf("Generated video saved to %s\n", fname)
+	generatedVideos := make([]*genai_std.Video, len(operation.Response.GeneratedVideos))
+	veoResults := make([]*entities.VeoResult, len(operation.Response.GeneratedVideos))
+	for i, video := range operation.Response.GeneratedVideos {
+		generatedVideos[i] = video.Video
 
-	videoData := valueobjects.NewVideoData(video.Video.VideoBytes)
+		// 動画をダウンロードする: genai_std.Videoはgenai_std.DownloadURIの実装を満たす。渡すことでsetVideoBytes()を通じてダウンロードされる。
+		s.genAIClient.Files.Download(ctx, generatedVideos[i], nil)
 
-	return entities.NewVeoResult(videoData), nil
+		// fname := fmt.Sprintf("veo3_with_image_input_%s.mp4", time.Now().Format("20060102150405"))
+		// _ = os.WriteFile(fname, generatedVideos[i].VideoBytes, 0644)
+		// log.Printf("Generated video saved to %s\n", fname)
+
+		veoResults[i] = entities.NewVeoResult(valueobjects.NewVideoData(generatedVideos[i].VideoBytes))
+	}
+
+	if len(generatedVideos) == 0 {
+		return nil, fmt.Errorf("no video generated")
+	}
+
+	return veoResults, nil
 }
 
 func (s *VeoAIService) Close() error {

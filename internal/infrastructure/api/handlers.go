@@ -72,15 +72,6 @@ var supportedImagenModels = []ImagenModel{
 	},
 }
 
-// サポートされるVeoモデル一覧（サーバー側で固定）
-var supportedVeoModels = []VeoModel{
-	{
-		ID:          "veo-3.0-generate-preview",
-		Name:        "Veo 3.0 Preview",
-		Description: "最新動画生成モデル（プレビュー版）",
-	},
-}
-
 func NewTryOnHandler(
 	tryOnUseCase *usecases.TryOnUseCase,
 	parameterService *services.ParameterService,
@@ -126,21 +117,6 @@ func (h *ImagenHandler) isValidImagenModel(modelID string) bool {
 // getDefaultImagenModel - デフォルトのImagenモデルIDを取得
 func (h *ImagenHandler) getDefaultImagenModel() string {
 	return "imagen-3.0-generate-002" // 安定版を推奨
-}
-
-// isValidVeoModel - 指定されたモデルIDが有効かどうかチェック
-func (h *VeoHandler) isValidVeoModel(modelID string) bool {
-	for _, model := range supportedVeoModels {
-		if model.ID == modelID {
-			return true
-		}
-	}
-	return false
-}
-
-// getDefaultVeoModel - デフォルト（唯一）のVeoモデルIDを取得
-func (h *VeoHandler) getDefaultVeoModel() string {
-	return "veo-3.0-generate-preview" // 固定モデル
 }
 
 // 画像生成を行わず、サンプル画像を返す
