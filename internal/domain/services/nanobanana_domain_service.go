@@ -31,7 +31,7 @@ func (s *NanobananaDomainService) ModifyImage(
 		return nil, fmt.Errorf("request validation failed: %w", err)
 	}
 
-	if request.Prompt() != "" {
+	if request.Prompt() != "" && request.IsTranslate() {
 		textRequest := entities.NewTextRequest(request.Prompt(), request.Model())
 		textResult, err := s.textAIService.TranslateToEnglish(ctx, textRequest)
 		if err != nil {
@@ -56,6 +56,9 @@ func (s *NanobananaDomainService) ModifyImage(
 		request.SetPrompt(prompt)
 	}
 
+	modPrompt := "Generate an image of Professional E-commerce Product Photo with the following instructions: " + request.Prompt()
+	request.SetPrompt(modPrompt)
+
 	return s.nanobananaService.ModifyImage(ctx, request)
 }
 
@@ -64,7 +67,7 @@ func (s *NanobananaDomainService) validateRequest(request *entities.NanobananaMo
 		return fmt.Errorf("prompt is required")
 	}
 
-	if request.ImageData() == nil {
+	if request.ImageCount() == 0 {
 		return fmt.Errorf("image data is required")
 	}
 

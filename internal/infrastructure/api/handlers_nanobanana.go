@@ -62,6 +62,42 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-seri
     border-color: #6366f1;
     background: #eef2ff;
 }
+.image-preview-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+}
+.image-preview-item {
+    position: relative;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+.image-preview-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.remove-image-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background: rgba(239, 68, 68, 0.9);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+}
+.remove-image-btn:hover {
+    background: rgba(239, 68, 68, 1);
+}
 </style>
 </head>
 <body class="bg-gray-50 text-gray-800">
@@ -74,7 +110,7 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-seri
 Virtual Try-On
 </button>
 <button onclick="location.href='/imagen'" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium shadow-sm">
-<svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+<svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
 Imagen画像生成
 </button>
 <button onclick="location.href='/veo'" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium shadow-sm">
@@ -90,7 +126,7 @@ Nanobanana画像編集
 
 <header class="text-center mb-8">
 <h1 class="text-3xl md:text-4xl font-bold text-gray-900">Nanobanana 画像編集</h1>
-<p class="text-gray-600 mt-2">画像とプロンプトを使用して画像を編集します</p>
+<p class="text-gray-600 mt-2">画像とプロンプトを使用して画像を編集します（最大3枚まで）</p>
 </header>
 
 <main class="bg-white p-6 md:p-8 rounded-2xl shadow-lg">
@@ -99,23 +135,23 @@ Nanobanana画像編集
 <!-- 画像アップロード -->
 <div>
 <label class="block text-lg font-semibold mb-2 text-gray-700">
-編集する画像をアップロード
+編集する画像をアップロード（最大3枚）
 <div class="tooltip">
 <span class="info-icon">?</span>
-<span class="tooltiptext">編集したい画像をアップロードしてください。対応形式: JPG, PNG` + locationInfo + `</span>
+<span class="tooltiptext">編集したい画像をアップロードしてください。最大3枚まで対応形式: JPG, PNG` + locationInfo + `</span>
 </div>
 </label>
 <div class="image-upload-area p-8 text-center" id="image-upload-area">
-<input type="file" id="image-input" name="image" accept="image/*" class="hidden" required>
+<input type="file" id="image-input" name="images" accept="image/*" class="hidden" multiple>
 <div id="upload-content">
 <svg class="mx-auto h-12 w-12 text-gray-400 mb-4" stroke="currentColor" fill="none" viewBox="0 0 48 48">
 <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
 <p class="text-lg text-gray-600 mb-2">画像をドラッグ&ドロップするか、クリックして選択</p>
-<p class="text-sm text-gray-500">JPG, PNG形式をサポート</p>
+<p class="text-sm text-gray-500">JPG, PNG形式をサポート（最大3枚まで）</p>
 </div>
 <div id="image-preview" class="hidden">
-<img id="preview-image" class="max-w-full max-h-64 mx-auto rounded-lg">
+<div id="image-preview-grid" class="image-preview-grid"></div>
 <p class="text-sm text-gray-600 mt-2">別の画像に変更するにはクリック</p>
 </div>
 </div>
@@ -173,7 +209,7 @@ const imageInput = document.getElementById('image-input');
 const imageUploadArea = document.getElementById('image-upload-area');
 const uploadContent = document.getElementById('upload-content');
 const imagePreview = document.getElementById('image-preview');
-const previewImage = document.getElementById('preview-image');
+const imagePreviewGrid = document.getElementById('image-preview-grid');
 const promptInput = document.getElementById('prompt');
 const resultSection = document.getElementById('result-section');
 const resultDisplay = document.getElementById('result-display');
@@ -183,8 +219,14 @@ const errorMessage = document.getElementById('error-message');
 const submitBtn = document.getElementById('submit-btn');
 const clearBtn = document.getElementById('clear-btn');
 
+let selectedFiles = [];
+
 // ファイルアップロード関連の処理
-imageUploadArea.addEventListener('click', () => {
+imageUploadArea.addEventListener('click', (event) => {
+    // バツボタンのクリックは無視
+    if (event.target.closest('.remove-image-btn')) {
+        return;
+    }
     imageInput.click();
 });
 
@@ -202,34 +244,97 @@ imageUploadArea.addEventListener('drop', (e) => {
     e.preventDefault();
     imageUploadArea.classList.remove('drag-over');
     
-    const files = e.dataTransfer.files;
-    if (files.length > 0) {
-        handleFileSelect(files[0]);
-    }
+    const files = Array.from(e.dataTransfer.files);
+    handleFiles(files);
 });
 
 imageInput.addEventListener('change', (e) => {
-    if (e.target.files.length > 0) {
-        handleFileSelect(e.target.files[0]);
-    }
+    const files = Array.from(e.target.files);
+    handleFiles(files);
 });
 
-function handleFileSelect(file) {
-    if (!file.type.startsWith('image/')) {
+function handleFiles(files) {
+    const imageFiles = files.filter(file => file.type.startsWith('image/'));
+    
+    if (imageFiles.length === 0) {
         errorMessage.textContent = '画像ファイルを選択してください';
+        errorMessage.classList.remove('hidden');
+        return;
+    }
+    
+    // 最大3枚まで制限
+    if (selectedFiles.length + imageFiles.length > 3) {
+        errorMessage.textContent = '画像は最大3枚までアップロードできます';
         errorMessage.classList.remove('hidden');
         return;
     }
     
     errorMessage.classList.add('hidden');
     
-    const reader = new FileReader();
-    reader.onload = (e) => {
-        previewImage.src = e.target.result;
-        uploadContent.classList.add('hidden');
-        imagePreview.classList.remove('hidden');
-    };
-    reader.readAsDataURL(file);
+    // 新しいファイルを追加
+    selectedFiles = selectedFiles.concat(imageFiles);
+    updateImagePreview();
+}
+
+function updateImagePreview() {
+    if (selectedFiles.length === 0) {
+        uploadContent.classList.remove('hidden');
+        imagePreview.classList.add('hidden');
+        return;
+    }
+    
+    uploadContent.classList.add('hidden');
+    imagePreview.classList.remove('hidden');
+    
+    imagePreviewGrid.innerHTML = '';
+    
+    // 順序付きで画像を読み込むためのPromise配列を作成
+    const loadPromises = selectedFiles.map((file, index) => {
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                resolve({
+                    index: index,
+                    dataUrl: e.target.result,
+                    file: file
+                });
+            };
+            reader.readAsDataURL(file);
+        });
+    });
+    
+    // すべての画像を順序付きで読み込み、順番通りに表示
+    Promise.all(loadPromises).then((results) => {
+        // インデックス順にソートしてから表示
+        results.sort((a, b) => a.index - b.index);
+        
+        results.forEach((result) => {
+            const previewItem = document.createElement('div');
+            previewItem.className = 'image-preview-item';
+            
+            const img = document.createElement('img');
+            img.src = result.dataUrl;
+            img.alt = 'Preview ' + (result.index + 1);
+            
+            const removeBtn = document.createElement('button');
+            removeBtn.className = 'remove-image-btn';
+            removeBtn.innerHTML = '×';
+            removeBtn.onclick = (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                removeImage(result.index);
+            };
+            
+            previewItem.appendChild(img);
+            previewItem.appendChild(removeBtn);
+            imagePreviewGrid.appendChild(previewItem);
+        });
+    });
+}
+
+function removeImage(index) {
+    selectedFiles.splice(index, 1);
+    updateImagePreview();
 }
 
 // クリアボタン
@@ -237,6 +342,7 @@ clearBtn.addEventListener('click', () => {
     if (confirm('フォームをクリアしますか？')) {
         imageInput.value = '';
         promptInput.value = '';
+        selectedFiles = [];
         uploadContent.classList.remove('hidden');
         imagePreview.classList.add('hidden');
         resultDisplay.innerHTML = '';
@@ -250,7 +356,6 @@ form.addEventListener('submit', async (event) => {
     event.preventDefault();
     
     const prompt = promptInput.value.trim();
-    const imageFile = imageInput.files[0];
     
     if (!prompt) {
         errorMessage.textContent = 'プロンプトを入力してください';
@@ -258,7 +363,7 @@ form.addEventListener('submit', async (event) => {
         return;
     }
     
-    if (!imageFile) {
+    if (selectedFiles.length === 0) {
         errorMessage.textContent = '画像を選択してください';
         errorMessage.classList.remove('hidden');
         return;
@@ -276,7 +381,11 @@ form.addEventListener('submit', async (event) => {
 
     const formData = new FormData();
     formData.append('prompt', prompt);
-    formData.append('image', imageFile);
+    
+    // 複数画像を追加
+    selectedFiles.forEach(file => {
+        formData.append('images', file);
+    });
 
     try {
         const resp = await fetch('/nanobanana/image-editing', { method: 'POST', body: formData });
@@ -398,9 +507,9 @@ func (h *NanobananaHandler) HandleNanobanana(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// 画像ファイルの取得
-	file, _, err := r.FormFile("image")
-	if err != nil {
+	// 複数画像ファイルの取得
+	form := r.MultipartForm
+	if form == nil || form.File == nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -409,48 +518,86 @@ func (h *NanobananaHandler) HandleNanobanana(w http.ResponseWriter, r *http.Requ
 		})
 		return
 	}
-	defer file.Close()
+
+	imageFiles, exists := form.File["images"]
+	if !exists || len(imageFiles) == 0 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "画像ファイルが必要です",
+		})
+		return
+	}
+
+	// 最大3枚まで制限
+	if len(imageFiles) > 3 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "画像は最大3枚までアップロードできます",
+		})
+		return
+	}
 
 	// 画像データの読み込み
-	imageData, err := io.ReadAll(file)
-	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": false,
-			"error":   "画像ファイルの読み込みに失敗しました",
-		})
-		return
-	}
+	var imageDatas []*valueobjects.ImageData
+	for _, fileHeader := range imageFiles {
+		file, err := fileHeader.Open()
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "画像ファイルの読み込みに失敗しました",
+			})
+			return
+		}
+		defer file.Close()
 
-	// MIMEタイプの検証
-	contentType := http.DetectContentType(imageData)
-	if !strings.HasPrefix(contentType, "image/") {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": false,
-			"error":   "有効な画像ファイルを選択してください",
-		})
-		return
-	}
+		imageData, err := io.ReadAll(file)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "画像ファイルの読み込みに失敗しました",
+			})
+			return
+		}
 
-	// UseCase実行用の入力データを準備
-	imageDataObj, err := valueobjects.NewImageData(imageData, contentType)
-	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": false,
-			"error":   fmt.Sprintf("画像データの作成に失敗しました: %v", err),
-		})
-		return
+		// MIMEタイプの検証
+		contentType := http.DetectContentType(imageData)
+		if !strings.HasPrefix(contentType, "image/") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "有効な画像ファイルを選択してください",
+			})
+			return
+		}
+
+		// UseCase実行用の入力データを準備
+		imageDataObj, err := valueobjects.NewImageData(imageData, contentType)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   fmt.Sprintf("画像データの作成に失敗しました: %v", err),
+			})
+			return
+		}
+
+		imageDatas = append(imageDatas, imageDataObj)
 	}
 
 	input := usecases.NanobananaInput{
-		Model:     h.getDefaultNanobananaModel(),
-		Prompt:    prompt,
-		ImageData: imageDataObj,
+		Model:      h.getDefaultNanobananaModel(),
+		Prompt:     prompt,
+		ImageDatas: imageDatas,
 	}
 
 	// UseCase実行
@@ -475,11 +622,21 @@ func (h *NanobananaHandler) HandleNanobanana(w http.ResponseWriter, r *http.Requ
 
 	// 画像データがある場合は追加
 	if output.Image != nil {
+		log.Printf("Successfully received image data, size: %d bytes", len(output.Image.Data()))
 		imageBase64 := base64.StdEncoding.EncodeToString(output.Image.Data())
 		response["image"] = map[string]string{
 			"data": imageBase64,
 			"type": output.Image.MimeType(),
 		}
+	} else {
+		log.Printf("No image data in output, response text: %s", output.Response)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "画像データが返されませんでした",
+		})
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")

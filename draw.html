@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ja"><head>
+    <meta charset="UTF-8">
+    <title>お絵かきツール</title>
+    <style>
+        canvas {
+            border: 1px solid #ccc;
+            cursor: crosshair;
+        }
+        button {
+            margin-top: 10px;
+            padding: 10px 20px;
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+    <h1>お絵かきツール</h1>
+    <canvas id="myCanvas" width="800" height="600"></canvas>
+    <br>
+    <button id="saveButton">画像を保存</button>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const canvas = document.getElementById('myCanvas');
+    const ctx = canvas.getContext('2d');
+    const saveButton = document.getElementById('saveButton');
+    
+    // 背景を白にする
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    let isDrawing = false;
+    let lastX = 0;
+    let lastY = 0;
+
+    // 描画開始
+    function startDrawing(e) {
+        isDrawing = true;
+        [lastX, lastY] = [e.offsetX, e.offsetY];
+    }
+
+    // 描画
+    function draw(e) {
+        if (!isDrawing) return;
+        ctx.beginPath();
+        ctx.moveTo(lastX, lastY);
+        ctx.lineTo(e.offsetX, e.offsetY);
+        ctx.stroke();
+        [lastX, lastY] = [e.offsetX, e.offsetY];
+    }
+
+    // 描画終了
+    function stopDrawing() {
+        isDrawing = false;
+    }
+
+    // イベントリスナー
+    canvas.addEventListener('mousedown', startDrawing);
+    canvas.addEventListener('mousemove', draw);
+    canvas.addEventListener('mouseup', stopDrawing);
+    canvas.addEventListener('mouseout', stopDrawing);
+
+    // 保存機能
+    saveButton.addEventListener('click', () => {
+        const image = canvas.toDataURL('image/jpeg'); // PNG形式のデータURLを取得
+        const link = document.createElement('a');
+        link.href = image;
+        link.download = 'drawing.jpeg'; // ダウンロード時のファイル名
+        link.click();
+    });
+});
+</script>
+
+</body>
+</html>

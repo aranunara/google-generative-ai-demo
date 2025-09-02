@@ -40,12 +40,14 @@ func (s *GeminiAIService) GenerateText(ctx context.Context, request *entities.Te
 func (s *GeminiAIService) TranslateToEnglish(ctx context.Context, request *entities.TextRequest) (*entities.TextResult, error) {
 	translatePrompt := ""
 
+	slog.Info("TranslateToEnglish", "request", request)
+
 	// veoが含まれている場合はveoのプロンプトを生成
 	if strings.Contains(request.Model(), "veo") {
 		slog.Info("TranslateToEnglish", "use prompt template", "veo")
 		translatePrompt = buildVeoPrompt(request.Prompt(), request.Model())
-	} else if strings.Contains(request.Model(), "imagen") {
-		slog.Info("TranslateToEnglish", "use prompt template", "imagen")
+	} else if strings.Contains(request.Model(), "image") {
+		slog.Info("TranslateToEnglish", "use prompt template", "image")
 		translatePrompt = buildImageGenerationPrompt(request.Prompt(), request.Model())
 	} else {
 		slog.Info("TranslateToEnglish", "use prompt template", "default")
@@ -102,9 +104,16 @@ func buildImageGenerationPrompt(inputPrompt string, model string) string {
 	sb.WriteString("If the input text is in Japanese, translate it directly into such a detailed and optimized English prompt. ")
 	sb.WriteString("Absolutely do not provide multiple options, explanations, commentary, suggestions, or any prefacing/accompanying remarks. ")
 	sb.WriteString("The final output must be only the optimized English prompt.")
+
+	sb.WriteString("Strictly adhere to the following output constraints:\n")
+	sb.WriteString("1. Output Only the Prompt: The entire response must consist of the optimized English prompt.\n")
+	sb.WriteString("2. No Prefixes or Explanations: Do not include any prefacing phrases (e.g., \"Here is...\", \"The output is...\", \"As requested...\"), no multiple options, no explanations, no commentary, and no surrounding text whatsoever.\n")
+	sb.WriteString("3. No Suggestions or Advice: Do not offer advice on which prompt is best or suggest alternatives.\n")
+
 	sb.WriteString("Input:\n")
 	sb.WriteString(inputPrompt)
 	sb.WriteString("\n\n")
+
 	sb.WriteString("Expected Output Format:\n")
 	sb.WriteString("[Highly descriptive and visually detailed English prompt for image generation]")
 

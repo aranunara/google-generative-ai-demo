@@ -19,23 +19,26 @@ func NewNanobananaUseCase(nanobananaService repositories.NanobananaAIService) *N
 }
 
 type NanobananaInput struct {
-	Model     string
-	Prompt    string
-	ImageData *valueobjects.ImageData
+	Model      string
+	Prompt     string
+	ImageDatas []*valueobjects.ImageData // 複数画像対応
 }
 
 type NanobananaOutput struct {
-	Image *valueobjects.ImageData
+	Image    *valueobjects.ImageData
+	Response string
 }
 
 func (uc *NanobananaUseCase) ModifyImage(ctx context.Context, input NanobananaInput) (*NanobananaOutput, error) {
-	request := entities.NewNanobananaModifyRequest(input.Model, input.Prompt, input.ImageData)
+	request := entities.NewNanobananaModifyRequestWithMultipleImages(input.Model, input.Prompt, input.ImageDatas)
+
 	result, err := uc.nanobananaService.ModifyImage(ctx, request)
 	if err != nil {
 		return nil, fmt.Errorf("failed to modify image: %w", err)
 	}
 
 	return &NanobananaOutput{
-		Image: result.ImageData(),
+		Image:    result.ImageData(),
+		Response: result.Response(),
 	}, nil
 }
