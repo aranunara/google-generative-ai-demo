@@ -3,6 +3,7 @@ package usecases
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"tryon-demo/internal/domain/entities"
 	"tryon-demo/internal/domain/repositories"
@@ -25,11 +26,15 @@ func NewTryOnUseCase(
 	}
 }
 
+type GarmentImageData struct {
+	Data     []byte
+	MimeType string
+}
+
 type TryOnInput struct {
 	PersonImageData  []byte
 	PersonMimeType   string
-	GarmentImageData []byte
-	GarmentMimeType  string
+	GarmentImageData []GarmentImageData
 	Parameters       *TryOnParametersInput
 }
 
@@ -60,9 +65,13 @@ func (uc *TryOnUseCase) Execute(ctx context.Context, input TryOnInput) (*TryOnOu
 		return nil, fmt.Errorf("invalid person image: %w", err)
 	}
 
-	garmentImage, err := valueobjects.NewImageData(input.GarmentImageData, input.GarmentMimeType)
-	if err != nil {
-		return nil, fmt.Errorf("invalid garment image: %w", err)
+	var garmentImageDatas []*valueobjects.ImageData
+	for _, garmentImageData := range input.GarmentImageData {
+		garmentImage, err := valueobjects.NewImageData(garmentImageData.Data, garmentImageData.MimeType)
+		if err != nil {
+			return nil, fmt.Errorf("invalid garment image: %w", err)
+		}
+		garmentImageDatas = append(garmentImageDatas, garmentImage)
 	}
 
 	parameters, err := uc.convertParameters(input.Parameters)
@@ -70,34 +79,65 @@ func (uc *TryOnUseCase) Execute(ctx context.Context, input TryOnInput) (*TryOnOu
 		return nil, fmt.Errorf("invalid parameters: %w", err)
 	}
 
-	request, err := entities.NewTryOnRequest(personImage, garmentImage, parameters)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+	var wg sync.WaitGroup
+
+	// 結果を保存するチャネル
+	resultCh := make(chan *entities.TryOnResult)
+	errCh := make(chan error)
+
+	for _, garmentImage := range garmentImageDatas {
+		wg.Add(1)
+		go func(garmentImage *valueobjects.ImageData) {
+			defer wg.Done()
+			request, err := entities.NewTryOnRequest(personImage, garmentImage, parameters)
+			if err != nil {
+				errCh <- fmt.Errorf("failed to create request: %w", err)
+				return
+			}
+
+			if err := uc.tryOnRepo.Save(ctx, request); err != nil {
+				errCh <- fmt.Errorf("failed to save request: %w", err)
+				return
+			}
+
+			result, err := uc.domainService.ProcessTryOn(ctx, request)
+			if err != nil {
+				errCh <- err
+				return
+			}
+			resultCh <- result
+		}(garmentImage)
 	}
 
-	if err := uc.tryOnRepo.Save(ctx, request); err != nil {
-		return nil, fmt.Errorf("failed to save request: %w", err)
-	}
+	go func() {
+		wg.Wait()
+		close(resultCh)
+		close(errCh)
+	}()
 
-	result, err := uc.domainService.ProcessTryOn(ctx, request)
-	if err != nil {
-		return nil, err
-	}
+	var output *TryOnOutput
 
-	if err := uc.tryOnRepo.SaveResult(ctx, result); err != nil {
-		return nil, fmt.Errorf("failed to save result: %w", err)
-	}
-
-	output := &TryOnOutput{
-		RequestID: request.ID(),
-		Images:    make([]ImageOutput, len(result.Images())),
-	}
-
-	for i, img := range result.Images() {
-		output.Images[i] = ImageOutput{
-			Data: img.Data(),
-			Type: string(parameters.OutputMimeType()),
+	for result := range resultCh {
+		if err := uc.tryOnRepo.SaveResult(ctx, result); err != nil {
+			return nil, fmt.Errorf("failed to save result: %w", err)
 		}
+
+		if output == nil {
+			output = &TryOnOutput{
+				RequestID: result.RequestID(),
+			}
+		}
+
+		for _, img := range result.Images() {
+			output.Images = append(output.Images, ImageOutput{
+				Data: img.Data(),
+				Type: string(parameters.OutputMimeType()),
+			})
+		}
+	}
+
+	for err := range errCh {
+		return nil, err
 	}
 
 	return output, nil

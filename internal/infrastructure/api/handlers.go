@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -206,37 +207,51 @@ func (h *TryOnHandler) HandleTryOn(w http.ResponseWriter, r *http.Request) {
 	}
 	// mimeTypeを取得
 	personMimeType := personFileHeader.Header.Get("Content-Type")
-
 	defer personFile.Close()
 
-	garmentFile, garmentFileHeader, err := r.FormFile("garment_image")
-	if err != nil {
+	// 複数ファイルを受け取るように修正
+	garmentFiles := r.MultipartForm.File["garment_image"]
+	if len(garmentFiles) == 0 {
 		h.sendError(w, "衣服画像を選んでください", http.StatusBadRequest)
 		return
 	}
-	garmentMimeType := garmentFileHeader.Header.Get("Content-Type")
 
-	defer garmentFile.Close()
+	var garmentFileData []usecases.GarmentImageData
+	for _, file := range garmentFiles {
+		garmentFile, err := file.Open()
+		if err != nil {
+			h.sendError(w, "衣服画像の読み込みに失敗しました", http.StatusInternalServerError)
+			return
+		}
 
-	personData, err := io.ReadAll(personFile)
+		defer garmentFile.Close()
+		data, err := io.ReadAll(garmentFile)
+		if err != nil {
+			h.sendError(w, "衣服画像の読み込みに失敗しました", http.StatusInternalServerError)
+			return
+		}
+		slog.Info("garmentFileData", "garmentFileData", file.Header.Get("Content-Type"), "dataSize", len(data))
+
+		garmentFileData = append(garmentFileData, usecases.GarmentImageData{
+			Data:     data,
+			MimeType: file.Header.Get("Content-Type"),
+		})
+	}
+
+	personFileData, err := io.ReadAll(personFile)
 	if err != nil {
 		h.sendError(w, "人物画像の読み込みに失敗しました", http.StatusInternalServerError)
 		return
 	}
 
-	garmentData, err := io.ReadAll(garmentFile)
-	if err != nil {
-		h.sendError(w, "衣服画像の読み込みに失敗しました", http.StatusInternalServerError)
-		return
-	}
+	slog.Info("personFileData", "personFileData", personMimeType, "dataSize", len(personFileData))
 
 	parameters := h.parameterService.ParseFromRequest(r)
 
 	input := usecases.TryOnInput{
-		PersonImageData:  personData,
+		PersonImageData:  personFileData,
 		PersonMimeType:   personMimeType,
-		GarmentImageData: garmentData,
-		GarmentMimeType:  garmentMimeType,
+		GarmentImageData: garmentFileData,
 		Parameters:       parameters,
 	}
 
@@ -251,6 +266,12 @@ func (h *TryOnHandler) HandleTryOn(w http.ResponseWriter, r *http.Request) {
 
 		hint := "ヒント: 露出や著名人・ロゴ類・過度な加工を避け、人物と衣服がはっきり写る画像で再試行してください。"
 		h.sendError(w, fmt.Sprintf("生成に失敗しました: %v %s", err, hint), http.StatusInternalServerError)
+		return
+	}
+
+	if output == nil {
+		log.Printf("Virtual Try-On returned nil output")
+		h.sendError(w, "生成に失敗しました: 結果が取得できませんでした", http.StatusInternalServerError)
 		return
 	}
 
@@ -615,22 +636,24 @@ Nanobanana画像編集
 <span id="person-name" class="text-sm text-gray-500 mt-2"></span>
 </div>
 <div>
-<label class="block text-lg font-semibold mb-2 text-gray-700">2. 衣服画像をアップロード</label>
+<label class="block text-lg font-semibold mb-2 text-gray-700">2. 衣服画像をアップロード（最大5枚まで）</label>
 <div class="image-upload-area p-8 text-center" id="garment-upload-area">
-<input type="file" id="garment-image" name="garment_image" accept="image/*" class="hidden" required>
+<input type="file" id="garment-image" name="garment_image" accept="image/*" multiple class="hidden" required>
 <div id="garment-upload-content">
 <svg class="mx-auto h-12 w-12 text-gray-400 mb-4" stroke="currentColor" fill="none" viewBox="0 0 48 48">
 <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
 <p class="text-lg text-gray-600 mb-2">衣服画像をドラッグ&ドロップするか、クリックして選択</p>
-<p class="text-sm text-gray-500 mb-4">JPG, PNG形式をサポート</p>
+<p class="text-sm text-gray-500 mb-4">JPG, PNG形式をサポート（最大5枚まで）</p>
 <button type="button" id="garment-sample-btn" class="inline-flex items-center px-4 py-2 rounded-lg bg-gradient-to-r from-green-500 to-teal-500 text-white shadow hover:shadow-lg">
 <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
 <span>サンプルから選択</span>
 </button>
 </div>
 <div id="garment-preview" class="hidden">
-<img id="garment-preview-image" class="max-w-full max-h-64 mx-auto rounded-lg">
+<div id="garment-preview-grid" class="grid grid-cols-2 md:grid-cols-3 gap-4">
+<!-- 複数画像のプレビューがここに表示される -->
+</div>
 <p class="text-sm text-gray-600 mt-2">別の画像に変更するにはクリック</p>
 </div>
 </div>
@@ -781,6 +804,9 @@ class="px-6 py-2 text-sm rounded-lg border border-gray-300 text-gray-600 hover:b
 <h2 id="modal-title" class="text-2xl font-bold text-gray-800">サンプル画像を選択</h2>
 <button id="close-modal" class="text-gray-500 hover:text-gray-700 text-2xl font-bold">&times;</button>
 </div>
+<div id="selection-info" class="mt-2 text-sm text-gray-600">
+<span id="selected-count">0</span>枚選択中（最大5枚まで）
+</div>
 </div>
 <div class="flex-1 overflow-y-auto p-6">
 <div id="sample-grid" class="grid grid-cols-2 md:grid-cols-3 gap-6">
@@ -788,7 +814,8 @@ class="px-6 py-2 text-sm rounded-lg border border-gray-300 text-gray-600 hover:b
 </div>
 </div>
 <div class="p-6 border-t border-gray-200 text-center">
-<button id="cancel-sample" class="px-6 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400">キャンセル</button>
+<button id="cancel-sample" class="px-6 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 mr-4">キャンセル</button>
+<button id="confirm-sample" class="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>選択完了</button>
 </div>
 </div>
 </div>
@@ -807,7 +834,7 @@ const garmentUploadContent = document.getElementById('garment-upload-content');
 const personPreview = document.getElementById('person-preview');
 const garmentPreview = document.getElementById('garment-preview');
 const personPreviewImage = document.getElementById('person-preview-image');
-const garmentPreviewImage = document.getElementById('garment-preview-image');
+const garmentPreviewGrid = document.getElementById('garment-preview-grid');
 const personName = document.getElementById('person-name');
 const garmentName = document.getElementById('garment-name');
 const resultSection = document.getElementById('result-section');
@@ -833,11 +860,17 @@ const modalTitle = document.getElementById('modal-title');
 const sampleGrid = document.getElementById('sample-grid');
 const closeModal = document.getElementById('close-modal');
 const cancelSample = document.getElementById('cancel-sample');
+const confirmSample = document.getElementById('confirm-sample');
+const selectedCount = document.getElementById('selected-count');
 
 // 現在選択中のサンプル画像を追跡するための変数
 let currentPersonSample = null;
 let currentGarmentSample = null;
 let currentModalCategory = null;
+let selectedSamples = []; // モーダル内で選択された画像を追跡
+
+// アップロードされたファイルを追跡するための変数
+let uploadedGarmentFiles = []; // アップロードされた服装画像ファイルを追跡
 
 // ファイルアップロード関連の処理
 function setupDragAndDrop(uploadArea, input, uploadContent, previewElement, previewImage, nameLabel) {
@@ -861,13 +894,21 @@ function setupDragAndDrop(uploadArea, input, uploadContent, previewElement, prev
         
         const files = e.dataTransfer.files;
         if (files.length > 0) {
-            handleFileSelect(files[0], input, uploadContent, previewElement, previewImage, nameLabel);
+            if (input.id === 'garment-image') {
+                handleGarmentFileSelect(Array.from(files), input, uploadContent, previewElement, previewImage, nameLabel);
+            } else {
+                handleFileSelect(files[0], input, uploadContent, previewElement, previewImage, nameLabel);
+            }
         }
     });
 
     input.addEventListener('change', (e) => {
         if (e.target.files.length > 0) {
-            handleFileSelect(e.target.files[0], input, uploadContent, previewElement, previewImage, nameLabel);
+            if (input.id === 'garment-image') {
+                handleGarmentFileSelect(Array.from(e.target.files), input, uploadContent, previewElement, previewImage, nameLabel);
+            } else {
+                handleFileSelect(e.target.files[0], input, uploadContent, previewElement, previewImage, nameLabel);
+            }
         }
     });
 }
@@ -891,6 +932,80 @@ function handleFileSelect(file, input, uploadContent, previewElement, previewIma
     reader.readAsDataURL(file);
 }
 
+function handleGarmentFileSelect(files, input, uploadContent, previewElement, previewGrid, nameLabel) {
+    // 既存のファイル数と新しいファイル数の合計が5枚を超えるかチェック
+    if (uploadedGarmentFiles.length + files.length > 5) {
+        errorMessage.textContent = '衣服画像は最大5枚まで選択できます（現在' + uploadedGarmentFiles.length + '枚選択中）';
+        errorMessage.classList.remove('hidden');
+        return;
+    }
+    
+    // 画像ファイルかチェック
+    for (let file of files) {
+        if (!file.type.startsWith('image/')) {
+            errorMessage.textContent = '画像ファイルを選択してください';
+            errorMessage.classList.remove('hidden');
+            return;
+        }
+    }
+    
+    errorMessage.classList.add('hidden');
+    
+    // 新しいファイルを既存のリストに追加
+    uploadedGarmentFiles.push(...files);
+    
+    // プレビューグリッドを更新
+    updateGarmentFilePreview();
+    
+    uploadContent.classList.add('hidden');
+    previewElement.classList.remove('hidden');
+    nameLabel.textContent = uploadedGarmentFiles.length + '枚の画像を選択中';
+}
+
+function updateGarmentFilePreview() {
+    garmentPreviewGrid.innerHTML = '';
+    
+    uploadedGarmentFiles.forEach((file, index) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const imgContainer = document.createElement('div');
+            imgContainer.className = 'relative';
+            
+            const img = document.createElement('img');
+            img.src = e.target.result;
+            img.alt = file.name;
+            img.className = 'w-full h-24 object-cover rounded-lg border';
+            
+            const removeBtn = document.createElement('button');
+            removeBtn.textContent = '×';
+            removeBtn.className = 'absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-red-600';
+            removeBtn.onclick = (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                // ファイルを配列から削除
+                uploadedGarmentFiles.splice(index, 1);
+                updateGarmentFilePreview();
+                updateGarmentFileList();
+            };
+            
+            imgContainer.appendChild(img);
+            imgContainer.appendChild(removeBtn);
+            garmentPreviewGrid.appendChild(imgContainer);
+        };
+        reader.readAsDataURL(file);
+    });
+}
+
+function updateGarmentFileList() {
+    if (uploadedGarmentFiles.length === 0) {
+        garmentUploadContent.classList.remove('hidden');
+        garmentPreview.classList.add('hidden');
+        garmentName.textContent = '';
+    } else {
+        garmentName.textContent = uploadedGarmentFiles.length + '枚の画像を選択中';
+    }
+}
+
 // サンプル画像関連の関数
 async function loadSampleImages(category) {
     try {
@@ -909,6 +1024,8 @@ async function loadSampleImages(category) {
 function showSampleModal(category) {
     currentModalCategory = category;
     modalTitle.textContent = category === 'person' ? '人物画像を選択' : '衣服画像を選択';
+    selectedSamples = []; // 選択をリセット
+    updateSelectionInfo();
     sampleModal.classList.remove('hidden');
     
     // サンプル画像を読み込んで表示
@@ -916,16 +1033,28 @@ function showSampleModal(category) {
         sampleGrid.innerHTML = '';
         samples.forEach(sample => {
             const sampleItem = document.createElement('div');
-            sampleItem.className = 'border rounded-lg p-4 cursor-pointer hover:border-blue-500 hover:shadow-md transition-all';
+            sampleItem.className = 'border rounded-lg p-4 cursor-pointer hover:border-blue-500 hover:shadow-md transition-all relative';
             sampleItem.innerHTML = 
+                '<div class="absolute top-2 left-2 z-10">' +
+                '<input type="checkbox" class="sample-checkbox w-4 h-4 text-indigo-600 bg-gray-100 border-gray-300 rounded focus:ring-indigo-500" data-sample-id="' + sample.id + '">' +
+                '</div>' +
                 '<div class="w-full h-48 bg-gray-100 rounded mb-3 flex items-center justify-center overflow-hidden">' +
                 '<img src="' + sample.url + '" alt="' + sample.name + '" class="max-w-full max-h-full object-contain">' +
                 '</div>' +
                 '<h3 class="font-semibold text-sm text-gray-800 mb-1">' + sample.name + '</h3>' +
                 '<p class="text-xs text-gray-600 leading-relaxed">' + sample.description + '</p>';
             
-            sampleItem.addEventListener('click', () => {
-                selectSampleImage(sample, category);
+            const checkbox = sampleItem.querySelector('.sample-checkbox');
+            checkbox.addEventListener('change', (e) => {
+                e.stopPropagation();
+                toggleSampleSelection(sample, checkbox.checked);
+            });
+            
+            sampleItem.addEventListener('click', (e) => {
+                if (e.target !== checkbox) {
+                    checkbox.checked = !checkbox.checked;
+                    toggleSampleSelection(sample, checkbox.checked);
+                }
             });
             
             sampleGrid.appendChild(sampleItem);
@@ -933,7 +1062,98 @@ function showSampleModal(category) {
     });
 }
 
+function toggleSampleSelection(sample, isSelected) {
+    if (isSelected) {
+        // 最大選択数の制限チェック
+        const maxCount = currentModalCategory === 'person' ? 1 : 5;
+        const categoryName = currentModalCategory === 'person' ? '人物画像' : '衣服画像';
+        
+        if (selectedSamples.length >= maxCount) {
+            errorMessage.textContent = categoryName + 'は最大' + maxCount + '枚まで選択できます';
+            errorMessage.classList.remove('hidden');
+            // チェックボックスを元に戻す
+            const checkbox = document.querySelector('[data-sample-id="' + sample.id + '"]');
+            if (checkbox) checkbox.checked = false;
+            return;
+        }
+        selectedSamples.push(sample);
+    } else {
+        selectedSamples = selectedSamples.filter(s => s.id !== sample.id);
+    }
+    updateSelectionInfo();
+}
+
+function updateSelectionInfo() {
+    selectedCount.textContent = selectedSamples.length;
+    confirmSample.disabled = selectedSamples.length === 0;
+    
+    // 選択情報の表示を更新
+    const maxCount = currentModalCategory === 'person' ? 1 : 5;
+    const categoryName = currentModalCategory === 'person' ? '人物画像' : '衣服画像';
+    const infoText = selectedSamples.length + '枚選択中（最大' + maxCount + '枚まで）';
+    selectedCount.parentNode.innerHTML = '<span id="selected-count">' + selectedSamples.length + '</span>枚選択中（最大' + maxCount + '枚まで）';
+}
+
+function confirmSampleSelection() {
+    if (currentModalCategory === 'person') {
+        // 人物画像の場合は1つだけ選択
+        if (selectedSamples.length > 0) {
+            const sample = selectedSamples[0];
+            currentPersonSample = sample;
+            personPreviewImage.src = sample.url;
+            personPreviewImage.alt = sample.name;
+            personUploadContent.classList.add('hidden');
+            personPreview.classList.remove('hidden');
+            personName.textContent = sample.name + ' (サンプル)';
+            personInput.value = '';
+            personInput.removeAttribute('required');
+        }
+    } else {
+        // 服装画像の場合は複数選択
+        currentGarmentSample = [...selectedSamples];
+        
+        // プレビューグリッドを更新
+        garmentPreviewGrid.innerHTML = '';
+        currentGarmentSample.forEach((s, index) => {
+            const imgContainer = document.createElement('div');
+            imgContainer.className = 'relative';
+            
+            const img = document.createElement('img');
+            img.src = s.url;
+            img.alt = s.name;
+            img.className = 'w-full h-24 object-cover rounded-lg border';
+            
+            const removeBtn = document.createElement('button');
+            removeBtn.textContent = '×';
+            removeBtn.className = 'absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-red-600';
+            removeBtn.onclick = (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                currentGarmentSample.splice(index, 1);
+                updateGarmentSampleList();
+            };
+            
+            imgContainer.appendChild(img);
+            imgContainer.appendChild(removeBtn);
+            garmentPreviewGrid.appendChild(imgContainer);
+        });
+        
+        garmentUploadContent.classList.add('hidden');
+        garmentPreview.classList.remove('hidden');
+        garmentName.textContent = currentGarmentSample.length + '枚のサンプル画像を選択中';
+        garmentInput.value = '';
+        garmentInput.removeAttribute('required');
+        
+        // アップロードされたファイルをクリア
+        uploadedGarmentFiles = [];
+    }
+    
+    // モーダルを閉じる
+    sampleModal.classList.add('hidden');
+}
+
 function selectSampleImage(sample, category) {
+    // 旧来の単一選択処理（後方互換性のため残す）
     if (category === 'person') {
         currentPersonSample = sample;
         personPreviewImage.src = sample.url;
@@ -941,23 +1161,21 @@ function selectSampleImage(sample, category) {
         personUploadContent.classList.add('hidden');
         personPreview.classList.remove('hidden');
         personName.textContent = sample.name + ' (サンプル)';
-        // ファイル入力をクリアしてサンプル使用を示す
         personInput.value = '';
         personInput.removeAttribute('required');
-    } else {
-        currentGarmentSample = sample;
-        garmentPreviewImage.src = sample.url;
-        garmentPreviewImage.alt = sample.name;
-        garmentUploadContent.classList.add('hidden');
-        garmentPreview.classList.remove('hidden');
-        garmentName.textContent = sample.name + ' (サンプル)';
-        // ファイル入力をクリアしてサンプル使用を示す
-        garmentInput.value = '';
-        garmentInput.removeAttribute('required');
+        sampleModal.classList.add('hidden');
     }
-    
-    // モーダルを閉じる
-    sampleModal.classList.add('hidden');
+}
+
+function updateGarmentSampleList() {
+    if (!currentGarmentSample || currentGarmentSample.length === 0) {
+        garmentUploadContent.classList.remove('hidden');
+        garmentPreview.classList.add('hidden');
+        garmentName.textContent = '';
+        currentGarmentSample = null;
+    } else {
+        garmentName.textContent = currentGarmentSample.length + '枚のサンプル画像を選択中';
+    }
 }
 
 function closeSampleModal() {
@@ -979,6 +1197,7 @@ garmentSampleBtn.addEventListener('click', (e) => {
 // モーダル関連のイベントリスナー
 closeModal.addEventListener('click', closeSampleModal);
 cancelSample.addEventListener('click', closeSampleModal);
+confirmSample.addEventListener('click', confirmSampleSelection);
 
 // モーダルの背景クリックで閉じる
 sampleModal.addEventListener('click', (event) => {
@@ -1035,7 +1254,7 @@ updateSeedAvailability();
 updateCompressionQualityAvailability();
 
 setupDragAndDrop(personUploadArea, personInput, personUploadContent, personPreview, personPreviewImage, personName);
-setupDragAndDrop(garmentUploadArea, garmentInput, garmentUploadContent, garmentPreview, garmentPreviewImage, garmentName);
+setupDragAndDrop(garmentUploadArea, garmentInput, garmentUploadContent, garmentPreview, garmentPreviewGrid, garmentName);
 
 clearBtn.addEventListener('click', () => {
     personInput.value = '';
@@ -1048,6 +1267,7 @@ clearBtn.addEventListener('click', () => {
     personPreview.classList.add('hidden');
     garmentUploadContent.classList.remove('hidden');
     garmentPreview.classList.add('hidden');
+    garmentPreviewGrid.innerHTML = '';
     
     resultDisplay.innerHTML = '';
     multipleResults.innerHTML = '';
@@ -1059,6 +1279,9 @@ clearBtn.addEventListener('click', () => {
     // サンプル画像の選択もリセット
     currentPersonSample = null;
     currentGarmentSample = null;
+    
+    // アップロードされたファイルもリセット
+    uploadedGarmentFiles = [];
     
     // required属性を復元
     personInput.setAttribute('required', 'required');
@@ -1085,10 +1308,10 @@ form.addEventListener('submit', async (event) => {
     
     // サンプル画像とファイルアップロードのどちらを使用するかをチェック
     const p = personInput.files[0];
-    const g = garmentInput.files[0];
+    const garmentFiles = uploadedGarmentFiles.length > 0 ? uploadedGarmentFiles : Array.from(garmentInput.files);
     
     const hasPersonImage = p || currentPersonSample;
-    const hasGarmentImage = g || currentGarmentSample;
+    const hasGarmentImage = garmentFiles.length > 0 || (currentGarmentSample && currentGarmentSample.length > 0);
     
     if (!hasPersonImage || !hasGarmentImage) {
         errorMessage.textContent = '人物画像と衣服画像の両方を選択してください（ファイルアップロードまたはサンプルから）';
@@ -1098,10 +1321,18 @@ form.addEventListener('submit', async (event) => {
 
     const MAX = 10 * 1024 * 1024;
     // ファイルアップロード使用時のみサイズチェック
-    if ((p && p.size > MAX) || (g && g.size > MAX)) {
-        errorMessage.textContent = '画像が大きすぎます（10MBまで対応）';
+    if (p && p.size > MAX) {
+        errorMessage.textContent = '人物画像が大きすぎます（10MBまで対応）';
         errorMessage.classList.remove('hidden');
         return;
+    }
+    
+    for (let file of garmentFiles) {
+        if (file.size > MAX) {
+            errorMessage.textContent = '衣服画像が大きすぎます（10MBまで対応）';
+            errorMessage.classList.remove('hidden');
+            return;
+        }
     }
 
     submitBtn.disabled = true;
@@ -1136,12 +1367,15 @@ form.addEventListener('submit', async (event) => {
         formData.append('person_image', p);
     }
     
-    if (currentGarmentSample && !g) {
+    if (currentGarmentSample && currentGarmentSample.length > 0 && garmentFiles.length === 0) {
         // サンプル画像のURLから画像データを取得してFormDataに追加
         try {
-            const response = await fetch(currentGarmentSample.url);
-            const blob = await response.blob();
-            formData.append('garment_image', blob, 'sample_garment.png');
+            for (let i = 0; i < currentGarmentSample.length; i++) {
+                const sample = currentGarmentSample[i];
+                const response = await fetch(sample.url);
+                const blob = await response.blob();
+                formData.append('garment_image', blob, 'sample_garment_' + i + '.png');
+            }
         } catch (error) {
             console.error('Failed to load garment sample image:', error);
             errorMessage.textContent = '衣服サンプル画像の読み込みに失敗しました';
@@ -1149,7 +1383,10 @@ form.addEventListener('submit', async (event) => {
             return;
         }
     } else {
-        formData.append('garment_image', g);
+        // ファイルアップロードの場合
+        for (let file of garmentFiles) {
+            formData.append('garment_image', file);
+        }
     }
     
     // フォームの全てのパラメータを追加
