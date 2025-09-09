@@ -280,8 +280,6 @@ func (h *TryOnHandler) HandleTryOn(w http.ResponseWriter, r *http.Request) {
 
 	response := h.createResponse(output.Images)
 
-	log.Printf("[DEBUG] Response: %v", response)
-
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		log.Printf("Failed to encode JSON response: %v", err)
 		h.sendError(w, "レスポンスの生成に失敗しました", http.StatusInternalServerError)
@@ -861,7 +859,7 @@ const sampleGrid = document.getElementById('sample-grid');
 const closeModal = document.getElementById('close-modal');
 const cancelSample = document.getElementById('cancel-sample');
 const confirmSample = document.getElementById('confirm-sample');
-const selectedCount = document.getElementById('selected-count');
+// selectedCountは動的に取得するように変更
 
 // 現在選択中のサンプル画像を追跡するための変数
 let currentPersonSample = null;
@@ -974,7 +972,7 @@ function updateGarmentFilePreview() {
             const img = document.createElement('img');
             img.src = e.target.result;
             img.alt = file.name;
-            img.className = 'w-full h-24 object-cover rounded-lg border';
+            img.className = 'w-full h-full object-cover rounded-lg border';
             
             const removeBtn = document.createElement('button');
             removeBtn.textContent = '×';
@@ -1025,8 +1023,14 @@ function showSampleModal(category) {
     currentModalCategory = category;
     modalTitle.textContent = category === 'person' ? '人物画像を選択' : '衣服画像を選択';
     selectedSamples = []; // 選択をリセット
-    updateSelectionInfo();
+    
+    // モーダルを表示してから要素を更新
     sampleModal.classList.remove('hidden');
+    
+    // 少し遅延させてからupdateSelectionInfoを呼び出し、DOM要素が確実に存在するようにする
+    setTimeout(() => {
+        updateSelectionInfo();
+    }, 10);
     
     // サンプル画像を読み込んで表示
     loadSampleImages(category).then(samples => {
@@ -1084,14 +1088,31 @@ function toggleSampleSelection(sample, isSelected) {
 }
 
 function updateSelectionInfo() {
+    // selectedCount要素を動的に取得
+    const selectedCount = document.getElementById('selected-count');
+    
+    // selectedCount要素が存在するかチェック
+    if (!selectedCount) {
+        console.error('selectedCount element not found');
+        return;
+    }
+    
     selectedCount.textContent = selectedSamples.length;
-    confirmSample.disabled = selectedSamples.length === 0;
+    if (confirmSample) {
+        confirmSample.disabled = selectedSamples.length === 0;
+    }
     
     // 選択情報の表示を更新
     const maxCount = currentModalCategory === 'person' ? 1 : 5;
     const categoryName = currentModalCategory === 'person' ? '人物画像' : '衣服画像';
     const infoText = selectedSamples.length + '枚選択中（最大' + maxCount + '枚まで）';
-    selectedCount.parentNode.innerHTML = '<span id="selected-count">' + selectedSamples.length + '</span>枚選択中（最大' + maxCount + '枚まで）';
+    
+    // parentNodeが存在するかチェック
+    if (selectedCount.parentNode) {
+        selectedCount.parentNode.innerHTML = '<span id="selected-count">' + selectedSamples.length + '</span>枚選択中（最大' + maxCount + '枚まで）';
+    } else {
+        console.error('selectedCount parentNode is null');
+    }
 }
 
 function confirmSampleSelection() {
@@ -1121,7 +1142,7 @@ function confirmSampleSelection() {
             const img = document.createElement('img');
             img.src = s.url;
             img.alt = s.name;
-            img.className = 'w-full h-24 object-cover rounded-lg border';
+            img.className = 'w-full h-full object-cover rounded-lg border';
             
             const removeBtn = document.createElement('button');
             removeBtn.textContent = '×';
