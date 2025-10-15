@@ -54,6 +54,10 @@ internal/
 - Google Cloud SDK (認証使用時)
 - **重要**: Vertex AI リージョンは `us-central1` を使用してください
   - `asia-northeast1` では Virtual Try-On API が利用できません
+- 1. 以下の制限を持つAPIキーを作成
+    * Vertex AI API
+    * Generative Language API
+- 2. Artifact Registory に us-central1 で genai-playground リポジトリを作成
 
 ### 実行方法
 
