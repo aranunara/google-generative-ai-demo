@@ -68,7 +68,7 @@ internal/
 - 以下の API を有効化した API キーを作成
   - Vertex AI API
   - Generative Language API
-- Artifact Registry に `us-central1` で `genai-playground` リポジトリを作成（Cloud Build デプロイ時）
+- デプロイする場合は Terraform と Google Cloud SDK（GCP 上のインフラは `terraform/` で管理）
 
 ### 設定ファイル
 
@@ -128,9 +128,22 @@ go fmt ./...
 go vet ./...
 ```
 
-### デプロイ
+### デプロイ / インフラ
 
-`cloudbuild.yaml` により、Cloud Build でイメージをビルドして Artifact Registry に push し、Cloud Run（サービス名: `tryon-demo`）へデプロイします。リージョン・サービスアカウント等は Cloud Build の代入変数（`_PROJECT_REGION`, `_SERVICE_ACCOUNT` 等）で指定します。
+GCP 上のインフラ（Artifact Registry / Cloud Run / Cloud Build トリガー / サービスアカウント / Secret Manager）は `terraform/` で IaC 管理しています。
+
+- **CI/CD**: GitHub 連携の Cloud Build トリガーが `main` への push で起動し、Docker イメージをビルドして Cloud Run（サービス名 `genai-demo`）へデプロイします。
+- **パスフィルタ**: トリガーには `included_files`（`**/*.go`, `go.mod`, `go.sum`, `dockerfile`, `docker-entrypoint.sh`, `cloudbuild.yaml`, `.dockerignore`）を設定済み。README・ドキュメント・HTML のみの変更ではビルド／デプロイは**起動しません**。
+- **シークレット**: `GEMINI_API_KEY` は Secret Manager（`gemini-api-key`）から注入されます。値は Terraform 管理外で、`gcloud secrets versions add` により投入します。
+- **設定の外出し**: 環境固有の値（プロジェクト ID・state バケット等）は `terraform/terraform.tfvars` と `terraform/backend.hcl`（いずれも gitignore）で指定します。リポジトリには `*.example` のプレースホルダのみを含みます。
+
+```bash
+cd terraform
+cp terraform.tfvars.example terraform.tfvars   # project_id 等を記入
+cp backend.hcl.example      backend.hcl         # state バケット名を記入
+terraform init -backend-config=backend.hcl
+terraform apply
+```
 
 ## API仕様
 
