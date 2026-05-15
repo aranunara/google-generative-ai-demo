@@ -9,7 +9,7 @@ RUN go mod download && go mod verify
 # ソースコードは最後にコピー
 COPY . .
 # バイナリサイズを最適化（-w: デバッグ情報削除, -s: シンボルテーブル削除）
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o main .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o main ./cmd/server
 
 FROM alpine:latest
 

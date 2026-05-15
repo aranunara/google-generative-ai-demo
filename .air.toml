@@ -3,7 +3,7 @@ tmp_dir = "tmp"
 
 [build]
 # コマンドの実行
-cmd = "go build -o ./tmp/main ."
+cmd = "go build -o ./tmp/main ./cmd/server"
 # バイナリファイル
 bin = "./tmp/main"
 # 監視対象の拡張子
