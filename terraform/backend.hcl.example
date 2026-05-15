@@ -1,0 +1,4 @@
+# これをコピーして backend.hcl を作成（backend.hcl は gitignore 済み）。
+# init 時に注入する:  terraform init -backend-config=backend.hcl
+bucket = "YOUR_TF_STATE_BUCKET"
+prefix = "genai-demo"

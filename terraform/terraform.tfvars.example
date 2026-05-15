@@ -1,0 +1,17 @@
+# これをコピーして terraform.tfvars を作成（terraform.tfvars は gitignore 済み）。
+# 実値は terraform.tfvars にのみ書き、repo には残さない。
+
+project_id = "YOUR_PROJECT_ID"
+region     = "us-central1"
+name       = "genai-demo"
+
+# 連携先 GitHub（このリポジトリ自体）。通常は variables.tf の default のままで可。
+github_owner = "aranunara"
+github_repo  = "google-generative-ai-demo"
+branch_regex = "^main$"
+
+vto_model = "virtual-try-on-preview-08-04"
+
+# 生成物の GCS 保存先（使わないなら空のまま）
+gcs_uri    = ""
+gcs_bucket = "" # 例: my-generated-bucket（gs:// なし。指定時 run SA に objectAdmin 付与）

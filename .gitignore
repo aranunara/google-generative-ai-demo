@@ -62,3 +62,12 @@ package-lock.json
 package.json
 
 docs/zenn/*
+
+# Terraform
+terraform/.terraform/
+*.tfstate
+*.tfstate.*
+terraform/terraform.tfvars
+terraform/backend.hcl
+crash.log
+crash.*.log
