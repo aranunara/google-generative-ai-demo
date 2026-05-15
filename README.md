@@ -21,8 +21,8 @@ Google の各種生成AIモデルを1つのGoアプリケーションから呼�
 - **アーキテクチャ**: Clean Architecture
 - **開発手法**: TDD (Test-Driven Development)
 - **フレームワーク / SDK**:
-  - Gorilla Mux (HTTPルーター)
-  - Google Cloud Vertex AI / Gen AI SDK
+  - 標準 `net/http` (`http.ServeMux`、メソッド付きルーティングパターン)
+  - Google Gen AI SDK (`google.golang.org/genai`、Vertex AI backend / Gemini API の両対応)
 - **インフラ**: Docker, Google Cloud Run, Cloud Build, Artifact Registry
 - **開発ツール**: Air (ホットリロード), Docker Compose
 
@@ -37,10 +37,15 @@ Google の各種生成AIモデルを1つのGoアプリケーションから呼�
 
 ## アーキテクチャ
 
-Clean Architecture パターンを採用し、レイヤー分離による保守性と拡張性を実現しています。機能（TryOn / Imagen / Veo / Nanobanana）ごとにエンティティ・ユースケース・ドメインサービス・外部API実装を分割しています。
+Clean Architecture パターンを採用し、レイヤー分離による保守性と拡張性を実現しています。機能（TryOn / Imagen / Veo / Nanobanana）ごとにエンティティ・ユースケース・ドメインサービス・外部API実装を分割しています。依存関係の組み立てとルーティング構築は `internal/di`（合成ルート）に集約し、`cmd/server` は起動のみを担います。
 
 ```plaintext
+cmd/
+├── server/              # 本体エントリポイント（設定読込→DI→HTTPサーバ起動）
+├── base64/              # images/ 配下を base64 へ変換する補助CLI
+└── mock/                # ローカル動作確認用のモックサーバ
 internal/
+├── di/                  # 合成ルート（設定読込・DIコンテナ・ルーティング構築）
 ├── domain/              # ドメイン層
 │   ├── entities/        # エンティティ（tryon / imagen / veo / nanobanana / gemini ...）
 │   ├── valueobjects/    # 値オブジェクト（image / video / parameters）
@@ -51,10 +56,14 @@ internal/
 │   └── services/        # アプリケーションサービス（パラメータ解析等）
 └── infrastructure/      # インフラストラクチャ層
     ├── api/             # HTTPハンドラー（機能別）
-    ├── external/        # 外部API接続（Vertex AI / Gemini）
+    ├── external/        # 外部API接続（Gen AI SDK: Vertex AI backend / Gemini）
     ├── repositories/    # データ永続化実装
     └── services/        # クライアントプール等
 ```
+
+ルーティングは `internal/di/container.go` の `Handler()` で `http.ServeMux` にメソッド付きパターン（`GET /{$}` / `POST /tryon` など）として登録しています。
+
+> 現状のレイヤー分離における依存方向・責務配置の課題と改善順序は [`ARCHITECTURE_REVIEW.md`](ARCHITECTURE_REVIEW.md) にまとめています。
 
 ## セットアップ
 
