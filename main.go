@@ -6,8 +6,6 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/gorilla/mux"
-
 	appservices "tryon-demo/internal/application/services"
 	"tryon-demo/internal/application/usecases"
 	domainservices "tryon-demo/internal/domain/services"
@@ -106,25 +104,25 @@ func main() {
 	nanobananaHandler := api.NewNanobananaHandler(nanobananaUseCase, location)
 
 	// ルートを設定
-	r := mux.NewRouter()
-	r.HandleFunc("/", handler.HandleIndex).Methods("GET")
-	r.HandleFunc("/tryon", handler.HandleTryOn).Methods("POST")
-	r.HandleFunc("/healthz", handler.HandleHealth).Methods("GET")
-	r.HandleFunc("/api/sample-images", handler.HandleSampleImages).Methods("GET")
-	r.HandleFunc("/api/sample-image", handler.HandleSampleImage).Methods("GET")
+	r := http.NewServeMux()
+	r.HandleFunc("GET /{$}", handler.HandleIndex)
+	r.HandleFunc("POST /tryon", handler.HandleTryOn)
+	r.HandleFunc("GET /healthz", handler.HandleHealth)
+	r.HandleFunc("GET /api/sample-images", handler.HandleSampleImages)
+	r.HandleFunc("GET /api/sample-image", handler.HandleSampleImage)
 
 	// 静的ファイル配信（CloudRunでも動作するように設定）
-	r.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("static/"))))
+	r.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static/"))))
 	// Imagen関連のルート
-	r.HandleFunc("/imagen", imagenHandler.HandleImagenIndex).Methods("GET")
-	r.HandleFunc("/imagen", imagenHandler.HandleImagen).Methods("POST")
+	r.HandleFunc("GET /imagen", imagenHandler.HandleImagenIndex)
+	r.HandleFunc("POST /imagen", imagenHandler.HandleImagen)
 	// Veo関連のルート
-	r.HandleFunc("/veo", veoHandler.HandleVeoIndex).Methods("GET")
-	r.HandleFunc("/veo", veoHandler.HandleVeo).Methods("POST")
+	r.HandleFunc("GET /veo", veoHandler.HandleVeoIndex)
+	r.HandleFunc("POST /veo", veoHandler.HandleVeo)
 
 	// Nanobanana関連のルート
-	r.HandleFunc("/nanobanana/image-editing", nanobananaHandler.HandleNanobananaIndex).Methods("GET")
-	r.HandleFunc("/nanobanana/image-editing", nanobananaHandler.HandleNanobanana).Methods("POST")
+	r.HandleFunc("GET /nanobanana/image-editing", nanobananaHandler.HandleNanobananaIndex)
+	r.HandleFunc("POST /nanobanana/image-editing", nanobananaHandler.HandleNanobanana)
 
 	// サーバーを起動
 	port := os.Getenv("PORT")
