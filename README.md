@@ -62,12 +62,13 @@ internal/
 
 - Go 1.24.2+
 - Docker & Docker Compose
-- Google Cloud SDK（ローカル認証に使用）
+- Google Cloud SDK（デプロイ時、または Try-On を ADC で動かす場合のみ。通常のローカル実行では不要）
 - **重要**: Vertex AI リージョンは `us-central1` を使用してください
   - `asia-northeast1` では Virtual Try-On API が利用できません
-- 以下の API を有効化した API キーを作成
-  - Vertex AI API
-  - Generative Language API
+- 以下の API を有効化した API キーを作成（このキー1つで全機能を認証）
+  - Vertex AI API（Virtual Try-On を Vertex AI express mode で利用）
+  - Generative Language API（Imagen / Veo / Nano Banana）
+  - ADC（`gcloud auth application-default login`）は不要。Try-On が express mode で配信されない場合のみ ADC へ切り替え
 - デプロイする場合は Terraform と Google Cloud SDK（GCP 上のインフラは `terraform/` で管理）
 
 ### 設定ファイル
@@ -77,7 +78,9 @@ internal/
 ```yaml
 location: us-central1
 vto_model: virtual-try-on-preview-08-04
-api_key: <Gemini / Generative Language API キー>
+# 全機能共通の API キー（Gemini API + Vertex AI express mode）。
+# 環境変数では GEMINI_API_KEY として渡される。
+api_key: <API キー>
 # GCS保存先URI
 gcs_uri: gs://your-gcs-bucket
 ```
