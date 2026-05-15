@@ -12,9 +12,8 @@ import (
 	"net/http"
 	"os"
 
-	"cloud.google.com/go/vertexai/genai"
 	"github.com/gorilla/mux"
-	"google.golang.org/api/option"
+	genai_std "google.golang.org/genai"
 )
 
 const (
@@ -25,7 +24,7 @@ type Server struct {
 	projectID string
 	location  string
 	vtoModel  string
-	client    *genai.Client
+	client    *genai_std.Client
 }
 
 func NewServer() (*Server, error) {
@@ -45,10 +44,19 @@ func NewServer() (*Server, error) {
 		vtoModel = "virtual-try-on-preview-08-04"
 	}
 
+	genaiAPIKey := os.Getenv("GEMINI_API_KEY")
+	if genaiAPIKey == "" {
+		return nil, fmt.Errorf("環境変数 GEMINI_API_KEY が未設定です")
+	}
+
 	log.Printf("[boot] Using VTO_MODEL=%s", vtoModel)
 
 	ctx := context.Background()
-	client, err := genai.NewClient(ctx, projectID, location, option.WithEndpoint(fmt.Sprintf("%s-aiplatform.googleapis.com:443", location)))
+	// Vertex AI を express mode（API キー）で初期化（ADC 不要）
+	client, err := genai_std.NewClient(ctx, &genai_std.ClientConfig{
+		Backend: genai_std.BackendVertexAI,
+		APIKey:  genaiAPIKey,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create genai client: %w", err)
 	}
@@ -330,50 +338,32 @@ func (s *Server) handleTryOn(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) callVirtualTryOn(ctx context.Context, personImage, garmentImage []byte) ([]byte, error) {
-	// GenerativeModelを作成
-	model := s.client.GenerativeModel(s.vtoModel)
-
-	// Python版のRecontextImageSourceと同等の構造を作成
-	personPart := genai.ImageData("image/jpeg", personImage)
-	garmentPart := genai.ImageData("image/jpeg", garmentImage)
-
-	// プロンプトを構築（Virtual Try-On用の特殊な形式）
-	prompt := []genai.Part{
-		genai.Text("person:"),
-		personPart,
-		genai.Text("garment:"),
-		garmentPart,
+	// Virtual Try-On 専用 API（RecontextImage）を呼び出す。
+	source := &genai_std.RecontextImageSource{
+		PersonImage: &genai_std.Image{
+			ImageBytes: personImage,
+			MIMEType:   "image/jpeg",
+		},
+		ProductImages: []*genai_std.ProductImage{
+			{
+				ProductImage: &genai_std.Image{
+					ImageBytes: garmentImage,
+					MIMEType:   "image/jpeg",
+				},
+			},
+		},
 	}
 
-	// 生成設定
-	model.SetTemperature(0.4)
-	model.SetTopK(32)
-	model.SetTopP(1)
-	model.SetMaxOutputTokens(2048)
-	model.ResponseMIMEType = "image/jpeg"
-
-	// 生成を実行
-	resp, err := model.GenerateContent(ctx, prompt...)
+	resp, err := s.client.Models.RecontextImage(ctx, s.vtoModel, source, &genai_std.RecontextImageConfig{
+		OutputMIMEType: "image/jpeg",
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate content: %w", err)
+		return nil, fmt.Errorf("failed to recontext image: %w", err)
 	}
 
-	// レスポンスから画像を取得
-	if len(resp.Candidates) == 0 {
-		return nil, fmt.Errorf("no candidates in response")
-	}
-
-	candidate := resp.Candidates[0]
-	if candidate.Content == nil || len(candidate.Content.Parts) == 0 {
-		return nil, fmt.Errorf("no content in response")
-	}
-
-	// 画像データを抽出
-	for _, part := range candidate.Content.Parts {
-		if blob, ok := part.(genai.Blob); ok {
-			if blob.MIMEType == "image/jpeg" || blob.MIMEType == "image/png" {
-				return blob.Data, nil
-			}
+	for _, generated := range resp.GeneratedImages {
+		if generated.Image != nil && len(generated.Image.ImageBytes) > 0 {
+			return generated.Image.ImageBytes, nil
 		}
 	}
 
@@ -396,7 +386,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create server: %v", err)
 	}
-	defer server.client.Close()
+	// genai.Client は明示的な Close 不要
 
 	r := mux.NewRouter()
 	r.HandleFunc("/", server.handleIndex).Methods("GET")
