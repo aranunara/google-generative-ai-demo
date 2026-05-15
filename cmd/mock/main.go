@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/gorilla/mux"
 	genai_std "google.golang.org/genai"
 )
 
@@ -388,10 +387,10 @@ func main() {
 	}
 	// genai.Client は明示的な Close 不要
 
-	r := mux.NewRouter()
-	r.HandleFunc("/", server.handleIndex).Methods("GET")
-	r.HandleFunc("/tryon", server.handleTryOn).Methods("POST")
-	r.HandleFunc("/healthz", server.handleHealth).Methods("GET")
+	r := http.NewServeMux()
+	r.HandleFunc("GET /{$}", server.handleIndex)
+	r.HandleFunc("POST /tryon", server.handleTryOn)
+	r.HandleFunc("GET /healthz", server.handleHealth)
 
 	port := os.Getenv("PORT")
 	if port == "" {
