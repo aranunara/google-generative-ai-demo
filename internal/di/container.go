@@ -31,17 +31,16 @@ func New(ctx context.Context, cfg *Config) (*Container, error) {
 	// Client Pool Service初期化
 	clientPoolService := services.NewClientPoolService(cfg.ProjectID, cfg.Location)
 
-	// VertexAI Client取得 (TryOn用)
-	vertexClient, err := clientPoolService.VertexAIPool().GetVertexAIClient(ctx)
+	// VertexAI Client取得 (TryOn用。Backend=VertexAI / API キー認証)
+	vertexClient, err := clientPoolService.VertexAIPool().GetVertexAIClient(ctx, cfg.GenaiAPIKey)
 	if err != nil {
 		clientPoolService.Close()
 		return nil, fmt.Errorf("failed to get Vertex AI client: %w", err)
 	}
 
 	// GenAI Client取得 (Imagen/Veo用)
-	genaiClient, err := clientPoolService.GenAIPool().GetGenAIClient(ctx, cfg.GeminiAPIKey)
+	genaiClient, err := clientPoolService.GenAIPool().GetGenAIClient(ctx, cfg.GenaiAPIKey)
 	if err != nil {
-		vertexClient.Close()
 		clientPoolService.Close()
 		return nil, fmt.Errorf("failed to get Gen AI client: %w", err)
 	}
@@ -49,9 +48,7 @@ func New(ctx context.Context, cfg *Config) (*Container, error) {
 	// インフラ層を初期化
 
 	// VertexAI Service初期化
-	vertexAIService := external.NewVertexAIService(
-		cfg.ProjectID, cfg.Location, cfg.VTOModel, cfg.UseSDK, vertexClient,
-	)
+	vertexAIService := external.NewVertexAIService(cfg.VTOModel, vertexClient)
 
 	// Imagen AI Service初期化
 	imagenAIService := external.NewImagenAIService(genaiClient)
@@ -84,12 +81,11 @@ func New(ctx context.Context, cfg *Config) (*Container, error) {
 		imagenHandler:     api.NewImagenHandler(imagenUseCase, cfg.Location),
 		veoHandler:        api.NewVeoHandler(veoUseCase, cfg.Location),
 		nanobananaHandler: api.NewNanobananaHandler(nanobananaUseCase, cfg.Location),
-		// defer 登録順 (clientPool→vertexClient→vertexAI→imagenAI) の
-		// 逆順 = LIFO で解放する。
+		// defer 登録順 (clientPool→vertexAI→imagenAI) の
+		// 逆順 = LIFO で解放する。genai.Client は Close 不要。
 		closeFns: []func(){
 			func() { imagenAIService.Close() },
 			func() { vertexAIService.Close() },
-			func() { vertexClient.Close() },
 			func() { clientPoolService.Close() },
 		},
 	}, nil

@@ -7,19 +7,18 @@ import (
 
 // Config はサーバ起動に必要な設定値を環境変数から読み込んだもの。
 type Config struct {
-	GeminiAPIKey string
-	ProjectID    string
-	Location     string
-	VTOModel     string
-	UseSDK       bool
-	Port         string
+	GenaiAPIKey string
+	ProjectID   string
+	Location    string
+	VTOModel    string
+	Port        string
 }
 
 // LoadConfig は環境変数から設定を読み込み、デフォルト適用と必須検証を行う。
 // 必須項目が未設定の場合は現行と同一の文言の error を返す。
 func LoadConfig() (*Config, error) {
-	geminiAPIKey := os.Getenv("GEMINI_API_KEY")
-	if geminiAPIKey == "" {
+	genaiAPIKey := os.Getenv("GEMINI_API_KEY")
+	if genaiAPIKey == "" {
 		return nil, errors.New("環境変数 GEMINI_API_KEY が未設定です")
 	}
 
@@ -44,11 +43,10 @@ func LoadConfig() (*Config, error) {
 	}
 
 	return &Config{
-		GeminiAPIKey: geminiAPIKey,
-		ProjectID:    projectID,
-		Location:     location,
-		VTOModel:     vtoModel,
-		UseSDK:       os.Getenv("USE_SDK") == "true",
-		Port:         port,
+		GenaiAPIKey: genaiAPIKey,
+		ProjectID:   projectID,
+		Location:    location,
+		VTOModel:    vtoModel,
+		Port:        port,
 	}, nil
 }

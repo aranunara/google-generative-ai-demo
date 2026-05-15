@@ -3,8 +3,7 @@ package repositories
 import (
 	"context"
 
-	"cloud.google.com/go/vertexai/genai" // VertexAI用
-	genai_std "google.golang.org/genai"  // 標準GenAI用
+	genai_std "google.golang.org/genai" // 標準GenAI（Vertex / Gemini API 両対応）
 )
 
 // AIクライアント共通設定
@@ -16,8 +15,8 @@ type AIClientConfig struct {
 // VertexAI Client Pool Service
 // TryOn機能で使用するVertex AI専用クライアントプール
 type VertexAIClientPool interface {
-	// VertexAI用クライアントを取得
-	GetVertexAIClient(ctx context.Context) (*genai.Client, error)
+	// VertexAI用クライアントを取得（Backend=VertexAI。API キー認証）
+	GetVertexAIClient(ctx context.Context, genaiAPIKey string) (*genai_std.Client, error)
 
 	// リソースのクリーンアップ
 	Close() error
@@ -27,7 +26,7 @@ type VertexAIClientPool interface {
 // Imagen/Veo機能で使用する標準GenAI専用クライアントプール
 type GenAIClientPool interface {
 	// 標準GenAI用クライアントを取得
-	GetGenAIClient(ctx context.Context, geminiApiKey string) (*genai_std.Client, error)
+	GetGenAIClient(ctx context.Context, genaiAPIKey string) (*genai_std.Client, error)
 
 	// リソースのクリーンアップ
 	Close() error

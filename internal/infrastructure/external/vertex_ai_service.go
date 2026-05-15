@@ -1,231 +1,89 @@
 package external
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"time"
 
-	"cloud.google.com/go/vertexai/genai"
-	"golang.org/x/oauth2/google"
+	genai_std "google.golang.org/genai"
 
 	"tryon-demo/internal/domain/entities"
 	"tryon-demo/internal/domain/repositories"
 	"tryon-demo/internal/domain/valueobjects"
-	"tryon-demo/model"
 )
 
 type VertexAIService struct {
-	projectID      string
-	location       string
 	vtoModel       string
-	vertexAIClient *genai.Client
-	useSDK         bool
+	vertexAIClient *genai_std.Client
 }
 
 func NewVertexAIService(
-	projectID, location, vtoModel string,
-	useSDK bool,
-	vertexAIClient *genai.Client,
+	vtoModel string,
+	vertexAIClient *genai_std.Client,
 ) repositories.VertexAIService {
 	return &VertexAIService{
-		projectID:      projectID,
-		location:       location,
 		vtoModel:       vtoModel,
 		vertexAIClient: vertexAIClient,
-		useSDK:         useSDK,
 	}
 }
 
+// GenerateTryOn は Virtual Try-On を実行する。
+// google.golang.org/genai の RecontextImage（Virtual Try-On 専用 API）を利用する。
+// 認証はクライアント側（client_pool_service）の Backend 設定に従う
+// （Vertex express mode = API キー、または ADC）。
 func (s *VertexAIService) GenerateTryOn(ctx context.Context, request *entities.TryOnRequest) (*entities.TryOnResult, error) {
-	if s.useSDK {
-		return s.generateWithSDK(ctx, request)
-	}
-	return s.generateWithREST(ctx, request)
-}
-
-func (s *VertexAIService) generateWithSDK(ctx context.Context, request *entities.TryOnRequest) (*entities.TryOnResult, error) {
-	model := s.vertexAIClient.GenerativeModel(s.vtoModel)
-
-	personPart := genai.ImageData("image/jpeg", request.PersonImage().Data())
-	garmentPart := genai.ImageData("image/jpeg", request.GarmentImage().Data())
-
-	prompt := []genai.Part{
-		genai.Text("person:"),
-		personPart,
-		genai.Text("garment:"),
-		garmentPart,
-	}
-
-	model.SetTemperature(0.4)
-	model.SetTopK(32)
-	model.SetTopP(1)
-	model.SetMaxOutputTokens(2048)
-	model.ResponseMIMEType = "image/jpeg"
-
-	resp, err := model.GenerateContent(ctx, prompt...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate content: %w", err)
-	}
-
-	if len(resp.Candidates) == 0 {
-		return nil, fmt.Errorf("no candidates in response")
-	}
-
-	candidate := resp.Candidates[0]
-	if candidate.Content == nil || len(candidate.Content.Parts) == 0 {
-		return nil, fmt.Errorf("no content in response")
-	}
-
-	for _, part := range candidate.Content.Parts {
-		if blob, ok := part.(genai.Blob); ok {
-			if blob.MIMEType == "image/jpeg" || blob.MIMEType == "image/png" {
-				imageData, err := valueobjects.NewImageData(blob.Data, blob.MIMEType)
-				if err != nil {
-					return nil, fmt.Errorf("failed to create image data: %w", err)
-				}
-				return entities.NewTryOnResult(request.ID(), []*valueobjects.ImageData{imageData}), nil
-			}
-		}
-	}
-
-	return nil, fmt.Errorf("no image found in response")
-}
-
-func (s *VertexAIService) generateWithREST(ctx context.Context, request *entities.TryOnRequest) (*entities.TryOnResult, error) {
-	accessToken, err := s.getAccessToken(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get access token: %w", err)
-	}
-
-	personB64 := request.PersonImage().ToBase64()
-	garmentB64 := request.GarmentImage().ToBase64()
-
+	person := request.PersonImage()
+	garment := request.GarmentImage()
 	params := request.Parameters()
 
-	// outputOptionsを構築（CompressionQualityは条件付きで追加）
-	outputOptions := map[string]interface{}{
-		"mimeType": string(params.OutputMimeType()),
-	}
-
-	// CompressionQualityが0より大きい場合のみ追加
-	if params.CompressionQuality() > 0 {
-		outputOptions["compressionQuality"] = params.CompressionQuality()
-	}
-
-	// parametersを構築（条件付きパラメータは後から追加）
-	parameters := map[string]interface{}{
-		"addWatermark":     params.AddWatermark(),
-		"baseSteps":        params.BaseSteps(),
-		"personGeneration": string(params.PersonGeneration()),
-		"safetySetting":    string(params.SafetySetting()),
-		"sampleCount":      params.SampleCount(),
-		"outputOptions":    outputOptions,
-	}
-
-	// Watermarkが無効かつSeedが0より大きい場合のみSeedを追加
-	if !params.AddWatermark() && params.Seed() > 0 {
-		parameters["seed"] = params.Seed()
-	}
-
-	apiRequest := map[string]interface{}{
-		"instances": []map[string]interface{}{
+	source := &genai_std.RecontextImageSource{
+		PersonImage: &genai_std.Image{
+			ImageBytes: person.Data(),
+			MIMEType:   imageMIME(person),
+		},
+		ProductImages: []*genai_std.ProductImage{
 			{
-				"personImage": map[string]interface{}{
-					"image": map[string]interface{}{
-						"bytesBase64Encoded": personB64,
-					},
-				},
-				"productImages": []map[string]interface{}{
-					{
-						"image": map[string]interface{}{
-							"bytesBase64Encoded": garmentB64,
-						},
-					},
+				ProductImage: &genai_std.Image{
+					ImageBytes: garment.Data(),
+					MIMEType:   imageMIME(garment),
 				},
 			},
 		},
-		"parameters": parameters,
 	}
 
-	reqBody, err := json.Marshal(apiRequest)
+	config := &genai_std.RecontextImageConfig{
+		NumberOfImages:    genai_std.Ptr(int32(params.SampleCount())),
+		BaseSteps:         genai_std.Ptr(int32(params.BaseSteps())),
+		PersonGeneration:  toGenaiPersonGeneration(params.PersonGeneration()),
+		SafetyFilterLevel: toGenaiSafetyFilterLevel(params.SafetySetting()),
+		OutputMIMEType:    string(params.OutputMimeType()),
+	}
+	if params.CompressionQuality() > 0 {
+		config.OutputCompressionQuality = genai_std.Ptr(int32(params.CompressionQuality()))
+	}
+	// 旧REST実装と同じく、ウォーターマーク無効かつ Seed 指定時のみ Seed を送る。
+	// 注: RecontextImageConfig に addWatermark に相当する項目は無いため、
+	// ウォーターマークの有無はサービス側既定に従う（既知の挙動差）。
+	if !params.AddWatermark() && params.Seed() > 0 {
+		config.Seed = genai_std.Ptr(int32(params.Seed()))
+	}
+
+	resp, err := s.vertexAIClient.Models.RecontextImage(ctx, s.vtoModel, source, config)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, fmt.Errorf("failed to recontext image: %w", err)
 	}
 
-	// デバッグ用：リクエストの詳細をログ出力（画像データは除く）
-	debugRequest := make(map[string]interface{})
-	for k, v := range apiRequest {
-		if k == "instances" {
-			// 画像データを除いたデバッグ用の簡略版
-			debugRequest[k] = "【画像データ省略】"
-		} else {
-			debugRequest[k] = v
-		}
-	}
-	debugJSON, _ := json.MarshalIndent(debugRequest, "", "  ")
-	fmt.Printf("[DEBUG] API Request (without image data): %s\n", string(debugJSON))
-
-	url := fmt.Sprintf("https://%s-aiplatform.googleapis.com/v1/projects/%s/locations/%s/publishers/google/models/%s:predict",
-		s.location, s.projectID, s.location, s.vtoModel)
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(reqBody))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{Timeout: 300 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(respBody))
-	}
-
-	predResp, err := s.parseResponse(respBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	if len(predResp.Predictions) == 0 {
-		return nil, fmt.Errorf("no predictions in response")
-	}
-
-	// 通常の画像データ処理（Storage URI未指定時）
 	var images []*valueobjects.ImageData
-	for i, prediction := range predResp.Predictions {
-		imageB64 := prediction.BytesBase64Encoded
-		if imageB64 == "" {
+	for _, generated := range resp.GeneratedImages {
+		if generated.Image == nil || len(generated.Image.ImageBytes) == 0 {
 			continue
 		}
 
-		imageBytes, err := base64.StdEncoding.DecodeString(imageB64)
-		if err != nil {
-			continue
-		}
-
-		imageData, err := valueobjects.NewImageData(imageBytes, prediction.MimeType)
+		imageData, err := valueobjects.NewImageData(generated.Image.ImageBytes, generated.Image.MIMEType)
 		if err != nil {
 			continue
 		}
 
 		images = append(images, imageData)
-		_ = i // avoid unused variable
 	}
 
 	if len(images) == 0 {
@@ -235,33 +93,42 @@ func (s *VertexAIService) generateWithREST(ctx context.Context, request *entitie
 	return entities.NewTryOnResult(request.ID(), images), nil
 }
 
-func (s *VertexAIService) getAccessToken(ctx context.Context) (string, error) {
-	creds, err := google.FindDefaultCredentials(ctx,
-		"https://www.googleapis.com/auth/cloud-platform")
-	if err != nil {
-		return "", fmt.Errorf("failed to find default credentials: %w", err)
-	}
-
-	token, err := creds.TokenSource.Token()
-	if err != nil {
-		return "", fmt.Errorf("failed to get access token: %w", err)
-	}
-
-	return token.AccessToken, nil
-}
-
-func (s *VertexAIService) parseResponse(data []byte) (*model.VirtualTryOnResponse, error) {
-	var response model.VirtualTryOnResponse
-	err := json.Unmarshal(data, &response)
-	if err != nil {
-		return nil, err
-	}
-	return &response, nil
-}
-
 func (s *VertexAIService) Close() error {
-	if s.vertexAIClient != nil {
-		return s.vertexAIClient.Close()
-	}
 	return nil
+}
+
+// imageMIME は ImageData の MIME タイプを返す。
+// ToJPEG 変換後は mimeType が空になり得るため、フォーマットからフォールバックする。
+func imageMIME(i *valueobjects.ImageData) string {
+	if mt := i.MimeType(); mt != "" {
+		return mt
+	}
+	if i.Format() == valueobjects.PNG {
+		return "image/png"
+	}
+	return "image/jpeg"
+}
+
+func toGenaiPersonGeneration(p valueobjects.PersonGeneration) genai_std.PersonGeneration {
+	switch p {
+	case valueobjects.AllowAll:
+		return genai_std.PersonGenerationAllowAll
+	case valueobjects.DontAllow:
+		return genai_std.PersonGenerationDontAllow
+	default:
+		return genai_std.PersonGenerationAllowAdult
+	}
+}
+
+func toGenaiSafetyFilterLevel(s valueobjects.SafetySetting) genai_std.SafetyFilterLevel {
+	switch s {
+	case valueobjects.BlockLowAndAbove:
+		return genai_std.SafetyFilterLevelBlockLowAndAbove
+	case valueobjects.BlockOnlyHigh:
+		return genai_std.SafetyFilterLevelBlockOnlyHigh
+	case valueobjects.BlockNone:
+		return genai_std.SafetyFilterLevelBlockNone
+	default:
+		return genai_std.SafetyFilterLevelBlockMediumAndAbove
+	}
 }

@@ -5,17 +5,16 @@ import (
 	"fmt"
 	"sync"
 
-	"cloud.google.com/go/vertexai/genai" // VertexAI用
-	"google.golang.org/api/option"
-	genai_std "google.golang.org/genai" // 標準GenAI用
+	genai_std "google.golang.org/genai" // 標準GenAI（Vertex / Gemini API 両対応）
 
 	"tryon-demo/internal/domain/repositories"
 )
 
 // VertexAI Client Pool実装
+// Try-On（RecontextImage）用。Backend=VertexAI で構築する。
 type vertexAIClientPool struct {
 	config *repositories.AIClientConfig
-	client *genai.Client
+	client *genai_std.Client
 	mutex  sync.RWMutex
 }
 
@@ -26,7 +25,7 @@ func newVertexAIClientPool(config *repositories.AIClientConfig) repositories.Ver
 	}
 }
 
-func (p *vertexAIClientPool) GetVertexAIClient(ctx context.Context) (*genai.Client, error) {
+func (p *vertexAIClientPool) GetVertexAIClient(ctx context.Context, genaiAPIKey string) (*genai_std.Client, error) {
 	p.mutex.RLock()
 	if p.client != nil {
 		defer p.mutex.RUnlock()
@@ -42,9 +41,18 @@ func (p *vertexAIClientPool) GetVertexAIClient(ctx context.Context) (*genai.Clie
 		return p.client, nil
 	}
 
-	// VertexAI クライアントを作成
-	endpoint := fmt.Sprintf("%s-aiplatform.googleapis.com:443", p.config.Location)
-	client, err := genai.NewClient(ctx, p.config.ProjectID, p.config.Location, option.WithEndpoint(endpoint))
+	// Vertex AI を express mode（API キー）で初期化する。ADC 不要。
+	// もし Try-On モデルが express mode で配信されない場合は、
+	// 下記コメントの ADC 版（Project/Location）に切り替える。
+	//   client, err := genai_std.NewClient(ctx, &genai_std.ClientConfig{
+	//       Backend:  genai_std.BackendVertexAI,
+	//       Project:  p.config.ProjectID,
+	//       Location: p.config.Location,
+	//   })
+	client, err := genai_std.NewClient(ctx, &genai_std.ClientConfig{
+		Backend: genai_std.BackendVertexAI,
+		APIKey:  genaiAPIKey,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create VertexAI client: %w", err)
 	}
@@ -58,9 +66,8 @@ func (p *vertexAIClientPool) Close() error {
 	defer p.mutex.Unlock()
 
 	if p.client != nil {
-		err := p.client.Close()
+		// genai.Client はリソースクリーンアップ不要
 		p.client = nil
-		return err
 	}
 	return nil
 }
@@ -81,7 +88,7 @@ func newGenAIClientPool(config *repositories.AIClientConfig) repositories.GenAIC
 
 func (p *genAIClientPool) GetGenAIClient(
 	ctx context.Context,
-	geminiApiKey string,
+	genaiAPIKey string,
 ) (*genai_std.Client, error) {
 	p.mutex.RLock()
 	if p.client != nil {
@@ -98,9 +105,9 @@ func (p *genAIClientPool) GetGenAIClient(
 		return p.client, nil
 	}
 
-	// 標準GenAI クライアントを作成
+	// 標準GenAI クライアントを作成（Gemini API backend = API キー）
 	client, err := genai_std.NewClient(ctx, &genai_std.ClientConfig{
-		APIKey: geminiApiKey,
+		APIKey: genaiAPIKey,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GenAI client: %w", err)
