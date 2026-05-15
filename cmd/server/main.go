@@ -4,142 +4,37 @@ import (
 	"context"
 	"log"
 	"net/http"
-	"os"
 
-	appservices "tryon-demo/internal/application/services"
-	"tryon-demo/internal/application/usecases"
-	domainservices "tryon-demo/internal/domain/services"
-	"tryon-demo/internal/infrastructure/api"
-	"tryon-demo/internal/infrastructure/external"
-	"tryon-demo/internal/infrastructure/repositories"
-	"tryon-demo/internal/infrastructure/services"
+	"tryon-demo/internal/di"
 )
 
 func main() {
-	geminiApiKey := os.Getenv("GEMINI_API_KEY")
-	if geminiApiKey == "" {
-		log.Fatal("環境変数 GEMINI_API_KEY が未設定です")
+	cfg, err := di.LoadConfig()
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	// 環境変数から設定を取得
-	projectID := os.Getenv("PROJECT_ID")
-	if projectID == "" {
-		log.Fatal("環境変数 PROJECT_ID が未設定です")
-	}
-
-	location := os.Getenv("LOCATION")
-	if location == "" {
-		location = "us-central1"
-	}
-
-	vtoModel := os.Getenv("VTO_MODEL")
-	if vtoModel == "" {
-		vtoModel = "virtual-try-on-preview-08-04"
-	}
-
-	useSDK := os.Getenv("USE_SDK") == "true"
-
-	log.Printf("[boot] Using VTO_MODEL=%s", vtoModel)
-	log.Printf("[boot] USE_SDK=%v (false=REST API, true=genai.Client)", useSDK)
+	log.Printf("[boot] Using VTO_MODEL=%s", cfg.VTOModel)
+	log.Printf("[boot] USE_SDK=%v (false=REST API, true=genai.Client)", cfg.UseSDK)
 
 	ctx := context.Background()
 
-	// Client Pool Service初期化
-	clientPoolService := services.NewClientPoolService(projectID, location)
-	defer clientPoolService.Close()
-
-	// VertexAI Client取得 (TryOn用)
-	vertexClient, err := clientPoolService.VertexAIPool().GetVertexAIClient(ctx)
+	c, err := di.New(ctx, cfg)
 	if err != nil {
-		log.Fatalf("Failed to get Vertex AI client: %v", err)
+		log.Fatalf("Failed to initialize container: %v", err)
 	}
+	defer c.Close()
 
-	defer vertexClient.Close()
-
-	// GenAI Client取得 (Imagen/Veo用)
-	genaiClient, err := clientPoolService.GenAIPool().GetGenAIClient(ctx, geminiApiKey)
-	if err != nil {
-		log.Fatalf("Failed to get Gen AI client: %v", err)
-	}
-
-	// インフラ層を初期化
-
-	// VertexAI Service初期化
-	vertexAIService := external.NewVertexAIService(
-		projectID, location, vtoModel, useSDK, vertexClient,
-	)
-	defer vertexAIService.Close()
-
-	// Imagen AI Service初期化
-	imagenAIService := external.NewImagenAIService(genaiClient)
-	defer imagenAIService.Close()
-
-	// Veo AI Service初期化
-	veoAIService := external.NewVeoAIService(genaiClient)
-
-	// Nanobanana AI Service初期化
-	nanobananaAIService := external.NewNanobananaAIService(genaiClient)
-
-	// リポジトリ層を初期化
-	tryOnRepository := repositories.NewMemoryTryOnRepository()
-
-	// ドメイン層を初期化
-	textAIService := external.NewGeminiAIService(genaiClient)
-	tryOnDomainService := domainservices.NewTryOnDomainService(vertexAIService)
-	imagenDomainService := domainservices.NewImagenDomainService(imagenAIService, textAIService)
-	veoDomainService := domainservices.NewVeoDomainService(veoAIService, textAIService)
-	nanobananaDomainService := domainservices.NewNanobananaDomainService(nanobananaAIService, textAIService)
-
-	// アプリケーション層を初期化
-	tryOnUseCase := usecases.NewTryOnUseCase(tryOnRepository, tryOnDomainService)
-	imagenUseCase := usecases.NewImagenUseCase(imagenDomainService)
-	veoUseCase := usecases.NewVeoUseCase(veoDomainService, imagenDomainService)
-	nanobananaUseCase := usecases.NewNanobananaUseCase(nanobananaDomainService)
-	parameterService := appservices.NewParameterService()
-
-	// API層を初期化
-	handler := api.NewTryOnHandler(tryOnUseCase, parameterService, location)
-	imagenHandler := api.NewImagenHandler(imagenUseCase, location)
-	veoHandler := api.NewVeoHandler(veoUseCase, location)
-	nanobananaHandler := api.NewNanobananaHandler(nanobananaUseCase, location)
-
-	// ルートを設定
-	r := http.NewServeMux()
-	r.HandleFunc("GET /{$}", handler.HandleIndex)
-	r.HandleFunc("POST /tryon", handler.HandleTryOn)
-	r.HandleFunc("GET /healthz", handler.HandleHealth)
-	r.HandleFunc("GET /api/sample-images", handler.HandleSampleImages)
-	r.HandleFunc("GET /api/sample-image", handler.HandleSampleImage)
-
-	// 静的ファイル配信（CloudRunでも動作するように設定）
-	r.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static/"))))
-	// Imagen関連のルート
-	r.HandleFunc("GET /imagen", imagenHandler.HandleImagenIndex)
-	r.HandleFunc("POST /imagen", imagenHandler.HandleImagen)
-	// Veo関連のルート
-	r.HandleFunc("GET /veo", veoHandler.HandleVeoIndex)
-	r.HandleFunc("POST /veo", veoHandler.HandleVeo)
-
-	// Nanobanana関連のルート
-	r.HandleFunc("GET /nanobanana/image-editing", nanobananaHandler.HandleNanobananaIndex)
-	r.HandleFunc("POST /nanobanana/image-editing", nanobananaHandler.HandleNanobanana)
-
-	// サーバーを起動
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
-
-	log.Printf("Starting server on port %s", port)
-	log.Printf("Project: %s, Location: %s, Model: %s", projectID, location, vtoModel)
+	log.Printf("Starting server on port %s", cfg.Port)
+	log.Printf("Project: %s, Location: %s, Model: %s", cfg.ProjectID, cfg.Location, cfg.VTOModel)
 	log.Printf("API Mode: %s", func() string {
-		if !useSDK {
+		if !cfg.UseSDK {
 			return "REST API"
 		}
 		return "genai.Client"
 	}())
 
-	if err := http.ListenAndServe(":"+port, r); err != nil {
+	if err := http.ListenAndServe(":"+cfg.Port, c.Handler()); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }
